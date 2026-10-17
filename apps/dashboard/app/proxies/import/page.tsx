@@ -95,6 +95,9 @@ export default function ImportProxiesPage() {
       setMessage(`Import finished: ${saved} saved, ${skipped} duplicate endpoints skipped, ${failures.length} failed, out of ${parsed.proxies.length} valid entries. Credentials were passed to the desktop secure-storage handler and are not displayed here.`);
       if (failures.length) setErrors((current) => [...current, ...failures]);
       if (saved > 0) setProgress("Import finished. Return to Proxy manager and test each endpoint.");
+      // Drop credential-bearing file contents from React state after processing; reselect the file to retry failures.
+      setFileText("");
+      setFileName("");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not read the existing proxy catalogue. No import was completed.");
     } finally {

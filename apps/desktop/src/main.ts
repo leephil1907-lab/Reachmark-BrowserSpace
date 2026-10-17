@@ -145,9 +145,25 @@ app.on("login", (event, webContents, _details, authInfo, callback) => {
 app.whenReady().then(async () => {
   await loadProfiles(); registerIpc();
   if (!profiles.length) { profiles = [{ id: randomUUID(), name: "Personal", createdAt: new Date().toISOString() }]; await saveProfiles(); }
-  const win = new BrowserWindow({ width: 900, height: 620, title: "BrowserSpace — Desktop runtime",
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
-  const html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BrowserSpace</title><style>body{background:#0d0f0e;color:#f0f3ed;font:15px system-ui;padding:48px;max-width:680px;margin:auto}h1{font-size:34px}b{color:#d6f269}.card{border:1px solid #293129;background:#151a16;border-radius:12px;padding:20px;line-height:1.7}</style><h1>BrowserSpace <b>Desktop</b></h1><p>Persistent profile runtime is online.</p><div class="card"><p>Profiles use separate persistent Chromium sessions.</p><p>HTTP, HTTPS and SOCKS5 proxy routing is available for unauthenticated endpoints.</p><p>Authenticated proxy credentials, live proxy checks and dashboard integration are not implemented yet.</p></div>';
-  await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  const dashboardUrl = process.env.BROWSERSPACE_DASHBOARD_URL || "http://localhost:3000";
+  const parsedDashboardUrl = new URL(dashboardUrl);
+  if (parsedDashboardUrl.protocol !== "http:" || !["localhost", "127.0.0.1"].includes(parsedDashboardUrl.hostname)) {
+    throw new Error("For security, the desktop dashboard URL must be a local HTTP origin.");
+  }
+  const win = new BrowserWindow({ width: 1360, height: 900, minWidth: 900, minHeight: 620, title: "BrowserSpace",
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true, nodeIntegration: false, sandbox: true
+    } });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  try {
+    await win.loadURL(parsedDashboardUrl.toString());
+  } catch {
+    const html = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>BrowserSpace</title><style>body{background:#0d0f0e;color:#f0f3ed;font:15px system-ui;padding:48px;max-width:680px;margin:auto}h1{font-size:34px}b{color:#d6f269}.card{border:1px solid #293129;background:#151a16;border-radius:12px;padding:20px;line-height:1.7}</style><h1>BrowserSpace <b>Desktop</b></h1><p>The desktop runtime is ready, but the dashboard could not be reached.</p><div class="card"><p>Start the dashboard in another terminal with <code>npm run dev</code>, then relaunch this window.</p><p>Persistent profile sessions are available when the dashboard is connected.</p></div>';
+    await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+  }
 });
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });

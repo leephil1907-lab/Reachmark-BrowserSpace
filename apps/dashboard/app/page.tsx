@@ -47,6 +47,7 @@ type ProxyItem = {
   lastTestAt?: string;
   lastTestStatus?: "passed" | "failed";
   lastTestMessage?: string;
+  lastTestLatencyMs?: number;
   lastEgressIp?: string;
 };
 
@@ -102,7 +103,7 @@ export default function HomePage() {
         protocol: item.protocol.toUpperCase() as ProxyItem["protocol"],
         region: item.lastTestStatus === "passed" ? `Egress ${item.lastEgressIp ?? "verified"}` : item.lastTestStatus === "failed" ? "Check failed" : "Not tested",
         assigned: mapped.filter((profile) => profile.proxy === item.id).length, hasCredentials: item.hasCredentials,
-        lastTestAt: item.lastTestAt, lastTestStatus: item.lastTestStatus, lastTestMessage: item.lastTestMessage, lastEgressIp: item.lastEgressIp
+        lastTestAt: item.lastTestAt, lastTestStatus: item.lastTestStatus, lastTestMessage: item.lastTestMessage, lastTestLatencyMs: item.lastTestLatencyMs, lastEgressIp: item.lastEgressIp
       })));
       setProfiles(mapped);
       setNotice("Desktop runtime connected. Shared proxies are stored locally, credentials use OS-backed encryption, and tests run through the configured proxy.");
@@ -177,7 +178,7 @@ export default function HomePage() {
       setProxies((current) => current.map((proxy) => proxy.id === proxyId ? {
         ...proxy, region: result.ok ? `Egress ${result.egressIp ?? "verified"}` : "Check failed",
         lastTestAt: result.lastTestAt, lastTestStatus: result.lastTestStatus,
-        lastTestMessage: result.lastTestMessage ?? result.error, lastEgressIp: result.egressIp
+        lastTestMessage: result.lastTestMessage ?? result.error, lastTestLatencyMs: result.lastTestLatencyMs, lastEgressIp: result.egressIp
       } : proxy));
       setNotice(result.ok ? `Proxy test passed. Public egress IP: ${result.egressIp}. This confirms the test request reached the internet through the proxy.` : `Proxy test failed: ${result.error ?? "No connection."}`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Proxy connectivity test failed."); }
@@ -307,7 +308,7 @@ export default function HomePage() {
 
           {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel panel-enter">
             <div className="panel-header"><div><h2>Proxy manager</h2><p>Keep proxy settings organized and assign them per profile.</p></div><button className="button secondary compact" onClick={() => setShowProxyForm(true)}><Plus size={15} /> Add proxy</button></div>
-            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}{proxy.hasCredentials ? " · Authenticated" : ""}</span>{proxy.lastTestAt && <small className={proxy.lastTestStatus === "passed" ? "proxy-test-success" : "proxy-test-failed"}>{proxy.lastTestMessage}{proxy.lastEgressIp ? ` · IP ${proxy.lastEgressIp}` : ""}</small>}</div><span className={proxy.lastTestStatus === "passed" ? "proxy-region proxy-ok" : proxy.lastTestStatus === "failed" ? "proxy-region proxy-bad" : "proxy-region"}><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" disabled={testingProxyIds.includes(proxy.id)} onClick={() => { void runProxyTest(proxy.id); }}>{testingProxyIds.includes(proxy.id) ? <LoaderCircle size={13} className="spin-icon" /> : <FlaskConical size={13} />} Test</button><button className="row-action danger-action" onClick={() => { void removeProxy(proxy.id); }}><Trash2 size={13} /> Remove</button></div>)}</div>}
+            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}{proxy.hasCredentials ? " · Authenticated" : ""}</span>{proxy.lastTestAt && <small className={proxy.lastTestStatus === "passed" ? "proxy-test-success" : "proxy-test-failed"}>{proxy.lastTestMessage}{proxy.lastTestLatencyMs != null ? ` · ${proxy.lastTestLatencyMs} ms` : ""}{proxy.lastEgressIp ? ` · IP ${proxy.lastEgressIp}` : ""}</small>}</div><span className={proxy.lastTestStatus === "passed" ? "proxy-region proxy-ok" : proxy.lastTestStatus === "failed" ? "proxy-region proxy-bad" : "proxy-region"}><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" disabled={testingProxyIds.includes(proxy.id)} onClick={() => { void runProxyTest(proxy.id); }}>{testingProxyIds.includes(proxy.id) ? <LoaderCircle size={13} className="spin-icon" /> : <FlaskConical size={13} />} Test</button><button className="row-action danger-action" onClick={() => { void removeProxy(proxy.id); }}><Trash2 size={13} /> Remove</button></div>)}</div>}
             <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials are encrypted with OS-backed secure storage. Test checks the proxy connection and reports its public egress IP; profile routing applies on next launch.</span></div>
           </section>}
 

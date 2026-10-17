@@ -18,4 +18,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run build
       - run: npm run build:desktop
+      - run: npm run test --workspace @browserspace/desktop
       - run: npm run lint

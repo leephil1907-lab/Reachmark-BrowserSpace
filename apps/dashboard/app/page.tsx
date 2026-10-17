@@ -24,6 +24,7 @@ type DesktopApi = {
   createProfile: (name: string) => Promise<DesktopProfile>;
   launchProfile: (id: string) => Promise<unknown>;
   stopProfile: (id: string) => Promise<unknown>;
+  setProfileProxy: (id: string, proxy?: { protocol: "http" | "https" | "socks5"; host: string; port: number }) => Promise<unknown>;
 };
 declare global { interface Window { browserSpace?: DesktopApi } }
 
@@ -42,9 +43,7 @@ const initialProfiles: Profile[] = [
   { id: "profile-003", name: "Personal", description: "Everyday browsing", color: "violet", proxy: null, lastUsed: "Oct 14", status: "Stopped" }
 ];
 
-const initialProxies: ProxyItem[] = [
-  { id: "proxy-01", name: "Office gateway", endpoint: "proxy.example.net:8080", protocol: "HTTP", region: "Not verified", assigned: 1 }
-];
+const initialProxies: ProxyItem[] = [];
 
 const navItems = [
   { label: "Overview", icon: Layers3 },
@@ -75,15 +74,24 @@ export default function HomePage() {
     void api.listProfiles().then(async (items) => {
       const mapped = await Promise.all(items.map(async (item, index) => {
         const state = await api.getProfileStatus(item.id);
+        const proxyId = item.proxy ? `${item.proxy.protocol}://${item.proxy.host}:${item.proxy.port}` : null;
         return {
           id: item.id, name: item.name, description: "Persistent desktop profile",
           color: ["lime", "blue", "violet"][index % 3],
-          proxy: null, lastUsed: "Local desktop", status: state.running ? "Ready" as const : "Stopped" as const
+          proxy: proxyId, lastUsed: "Local desktop", status: state.running ? "Ready" as const : "Stopped" as const,
+          proxyConfig: item.proxy
         };
       }));
       if (cancelled) return;
-      setProfiles(mapped);
-      setNotice("Desktop runtime connected. Profile creation and launch/stop actions use the local Electron runtime. Proxy catalogue changes remain preview-only.");
+      const unique = new Map<string, ProxyItem>();
+      for (const item of mapped) {
+        if (!item.proxyConfig) continue;
+        const id = `${item.proxyConfig.protocol}://${item.proxyConfig.host}:${item.proxyConfig.port}`;
+        if (!unique.has(id)) unique.set(id, { id, name: `${item.proxyConfig.host}`, endpoint: `${item.proxyConfig.host}:${item.proxyConfig.port}`, protocol: item.proxyConfig.protocol.toUpperCase() as ProxyItem["protocol"], region: "Saved locally", assigned: 0 });
+      }
+      setProxies(Array.from(unique.values()));
+      setProfiles(mapped.map(({ proxyConfig: _proxyConfig, ...item }) => item));
+      setNotice("Desktop runtime connected. Profile creation, launch/stop, and assigned proxy routing use the local Electron runtime.");
     }).catch(() => {
       if (!cancelled) setNotice("Desktop bridge detected, but profiles could not be loaded. Restart the desktop app and check its runtime logs.");
     });
@@ -154,10 +162,31 @@ export default function HomePage() {
       : `“${profile.name}” was marked ready in the preview. Launch the desktop app to open a real session.`);
   }
 
-  function assignProxy(profileId: string, proxyId: string) {
+  async function assignProxy(profileId: string, proxyId: string) {
+    if (window.browserSpace && desktopConnected) {
+      try {
+        const selected = proxies.find((proxy) => proxy.id === proxyId);
+        if (selected) {
+          const match = /^(.+):(\d{1,5})$/.exec(selected.endpoint);
+          if (!match) throw new Error("Proxy endpoint must be a hostname or IP address followed by a port.");
+          await window.browserSpace.setProfileProxy(profileId, {
+            protocol: selected.protocol.toLowerCase() as "http" | "https" | "socks5",
+            host: match[1], port: Number(match[2])
+          });
+        } else {
+          await window.browserSpace.setProfileProxy(profileId, undefined);
+        }
+        setProfiles((current) => current.map((item) => item.id === profileId ? { ...item, proxy: proxyId || null } : item));
+        setProxies((current) => current.map((proxy) => ({ ...proxy, assigned: profiles.filter((profile) => profile.id !== profileId && profile.proxy === proxy.id).length + (proxy.id === proxyId ? 1 : 0) })));
+        setNotice("Proxy assignment saved to the desktop profile. The setting takes effect the next time you launch that profile.");
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Could not save the proxy assignment.");
+      }
+      return;
+    }
     setProfiles((current) => current.map((item) => item.id === profileId ? { ...item, proxy: proxyId || null } : item));
     setProxies((current) => current.map((proxy) => ({ ...proxy, assigned: profiles.filter((profile) => profile.id !== profileId && profile.proxy === proxy.id).length + (proxy.id === proxyId ? 1 : 0) })));
-    setNotice("Assignment updated in this preview. Traffic routing is not active until the desktop session layer is connected.");
+    setNotice("Assignment updated in this preview only. Launch the desktop app to persist proxy settings and route traffic.");
   }
 
   const activeProfiles = profiles.filter((profile) => profile.status === "Ready").length;
@@ -221,7 +250,7 @@ export default function HomePage() {
           {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel">
             <div className="panel-header"><div><h2>Proxy manager</h2><p>Keep proxy settings organized and assign them per profile.</p></div><button className="button secondary compact" onClick={() => setShowProxyForm(true)}><Plus size={15} /> Add proxy</button></div>
             {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}</span></div><span className="proxy-region"><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" onClick={() => { setProxies((current) => current.filter((item) => item.id !== proxy.id)); setProfiles((current) => current.map((profile) => profile.proxy === proxy.id ? { ...profile, proxy: null } : profile)); setNotice("Proxy removed from the preview and detached from preview profiles. No live network configuration was changed."); }}>Remove <X size={13} /></button></div>)}</div>}
-            <div className="proxy-hint"><ShieldCheck size={15} /><span>Proxy credentials are not collected in this preview. Secure credential storage and live connection testing are part of the service layer.</span></div>
+            <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials and live proxy diagnostics are not yet exposed in the dashboard. Saved profile assignments are applied by the desktop runtime.</span></div>
           </section>}
 
           {activeNav === "Activity" && <section className="panel activity-panel"><div className="panel-header"><div><h2>Workspace activity</h2><p>Actions in this session.</p></div><Clock3 size={18} /></div><div className="activity-item"><span className="activity-icon"><Check size={15} /></span><span><b>Workspace opened</b><small>Preview UI loaded successfully. No browser processes or network checks were run.</small></span><time>Now</time></div><div className="activity-item"><span className="activity-icon"><LockKeyhole size={15} /></span><span><b>Privacy boundary active</b><small>This dashboard does not collect proxy passwords or profile cookies.</small></span><time>Now</time></div></section>}
@@ -232,8 +261,8 @@ export default function HomePage() {
 
       {(showProfileForm || showProxyForm) && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setShowProfileForm(false); setShowProxyForm(false); } }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-          <div className="modal-top"><div><span className="modal-eyebrow">{showProfileForm ? "PROFILE SETUP" : "NETWORK SETUP"}</span><h2 id="modal-title">{showProfileForm ? "Create a profile" : "Add a proxy"}</h2><p>{showProfileForm ? "Give this browsing session a clear purpose." : "Save non-secret connection details for the prototype."}</p></div><button className="icon-button" aria-label="Close" onClick={() => { setShowProfileForm(false); setShowProxyForm(false); }}><X size={17} /></button></div>
-          {showProfileForm ? <form onSubmit={(event) => { event.preventDefault(); createProfile(); }}><label className="field-label">Profile name<input autoFocus value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="e.g. Design research" maxLength={48} required /></label><div className="field-note"><LockKeyhole size={14} /> {desktopConnected ? "This profile will be saved to the local desktop store." : "Run the desktop app to save this profile persistently."}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProfileForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Create profile</button></div></form> : <form onSubmit={(event) => { event.preventDefault(); createProxy(); }}><label className="field-label">Proxy name<input autoFocus value={proxyName} onChange={(event) => setProxyName(event.target.value)} placeholder="e.g. Office gateway" maxLength={48} required /></label><label className="field-label">Protocol<select value={proxyProtocol} onChange={(event) => setProxyProtocol(event.target.value as ProxyItem["protocol"])}><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option></select></label><label className="field-label">Host and port<input value={proxyHost} onChange={(event) => setProxyHost(event.target.value)} placeholder="proxy.example.net:8080" required pattern="[^\s:/]+:[0-9]{1,5}" title="Enter a hostname or IP address followed by a colon and port, e.g. proxy.example.net:8080" /></label><div className="field-note"><LockKeyhole size={14} /> Do not enter credentials here. This preview does not securely store passwords or test connectivity.</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProxyForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Add proxy</button></div></form>}
+          <div className="modal-top"><div><span className="modal-eyebrow">{showProfileForm ? "PROFILE SETUP" : "NETWORK SETUP"}</span><h2 id="modal-title">{showProfileForm ? "Create a profile" : "Add a proxy"}</h2><p>{showProfileForm ? "Give this browsing session a clear purpose." : "Save endpoint details for this workspace; assigning it to a desktop profile persists the routing settings."}</p></div><button className="icon-button" aria-label="Close" onClick={() => { setShowProfileForm(false); setShowProxyForm(false); }}><X size={17} /></button></div>
+          {showProfileForm ? <form onSubmit={(event) => { event.preventDefault(); createProfile(); }}><label className="field-label">Profile name<input autoFocus value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="e.g. Design research" maxLength={48} required /></label><div className="field-note"><LockKeyhole size={14} /> {desktopConnected ? "This profile will be saved to the local desktop store." : "Run the desktop app to save this profile persistently."}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProfileForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Create profile</button></div></form> : <form onSubmit={(event) => { event.preventDefault(); createProxy(); }}><label className="field-label">Proxy name<input autoFocus value={proxyName} onChange={(event) => setProxyName(event.target.value)} placeholder="e.g. Office gateway" maxLength={48} required /></label><label className="field-label">Protocol<select value={proxyProtocol} onChange={(event) => setProxyProtocol(event.target.value as ProxyItem["protocol"])}><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option></select></label><label className="field-label">Host and port<input value={proxyHost} onChange={(event) => setProxyHost(event.target.value)} placeholder="proxy.example.net:8080" required pattern="[^\s:/]+:[0-9]{1,5}" title="Enter a hostname or IP address followed by a colon and port, e.g. proxy.example.net:8080" /></label><div className="field-note"><LockKeyhole size={14} /> Credentials and live connectivity tests are not available in this form yet.</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProxyForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Add proxy</button></div></form>}
         </section>
       </div>}
       <div className="bottom-spacer" />

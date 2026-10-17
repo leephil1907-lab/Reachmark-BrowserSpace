@@ -35,7 +35,7 @@ function validateProxy(value: unknown): ProxyConfig | undefined {
   let usernameCiphertext = p.usernameCiphertext;
   let passwordCiphertext = p.passwordCiphertext;
   if (typeof raw.username === "string" || typeof raw.password === "string") {
-    if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure credential storage is unavailable on this device.");
+    if (!safeStorage.isEncryptionAvailable() || safeStorage.getSelectedStorageBackend() === "basic_text") throw new Error("OS-backed secure credential storage is unavailable on this device.");
     if (typeof raw.username === "string" && raw.username.length > 512) throw new Error("Proxy username is too long.");
     if (typeof raw.password === "string" && raw.password.length > 2048) throw new Error("Proxy password is too long.");
     usernameCiphertext = typeof raw.username === "string" && raw.username.length ? safeStorage.encryptString(raw.username).toString("base64") : undefined;
@@ -93,7 +93,14 @@ function registerIpc() {
   ipcMain.handle("profiles:set-proxy", async (_event, input: { id?: unknown; proxy?: unknown }) => {
     const p = profiles.find((item) => item.id === input?.id);
     if (!p) throw new Error("Profile not found.");
-    p.proxy = validateProxy(input?.proxy); await saveProfiles(); return safeProfile(p);
+    const nextProxy = validateProxy(input?.proxy);
+    const raw = input?.proxy && typeof input.proxy === "object" ? input.proxy as Record<string, unknown> : {};
+    const hasCredentialInput = Object.prototype.hasOwnProperty.call(raw, "username") || Object.prototype.hasOwnProperty.call(raw, "password");
+    if (nextProxy && p.proxy && !hasCredentialInput && nextProxy.host === p.proxy.host && nextProxy.port === p.proxy.port) {
+      nextProxy.usernameCiphertext = p.proxy.usernameCiphertext;
+      nextProxy.passwordCiphertext = p.proxy.passwordCiphertext;
+    }
+    p.proxy = nextProxy; await saveProfiles(); return safeProfile(p);
   });
   ipcMain.handle("profiles:launch", (_event, input: { id?: unknown }) => {
     if (typeof input?.id !== "string") throw new Error("Profile ID is required.");

@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Activity, AppWindow, ArrowDownUp, ArrowUpRight, Check, ChevronDown, CircleHelp,
   Clock3, Command, Globe2, Layers3, LockKeyhole, MoreHorizontal, Plus,
-  Search, Settings2, ShieldCheck, Wifi, X, FlaskConical, Trash2, LoaderCircle
+  Search, Settings2, ShieldCheck, Wifi, X, FlaskConical, Trash2, LoaderCircle, FileUp
 } from "lucide-react";
 
 type Profile = {
@@ -286,7 +287,7 @@ export default function HomePage() {
         <div className="content page-enter">
           <div className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR PRIVATE WORKSPACE</div><h1>{activeNav === "Overview" ? "Your browser, organized." : activeNav}</h1><p className="subtitle">{activeNav === "Overview" ? "Keep browsing sessions separate, persistent, and easy to manage." : activeNav === "Profiles" ? "Create and organize independent browsing sessions." : activeNav === "Proxies" ? "Manage proxy configurations and profile assignments." : "A transparent record of workspace actions."}</p></div>
-            <div className="welcome-actions"><button className="button secondary" onClick={() => setShowProxyForm(true)}><Wifi size={16} /> Add proxy</button><button className="button primary" onClick={() => setShowProfileForm(true)}><Plus size={17} /> New profile</button></div>
+            <div className="welcome-actions"><Link className="button secondary" href="/proxies/import"><FileUp size={16} /> Import list</Link><button className="button secondary" onClick={() => setShowProxyForm(true)}><Wifi size={16} /> Add proxy</button><button className="button primary" onClick={() => setShowProfileForm(true)}><Plus size={17} /> New profile</button></div>
           </div>
 
           <div className="notice"><ShieldCheck size={17} /><span>{notice}</span><button aria-label="Dismiss notice" onClick={() => setNotice("")}><X size={15} /></button></div>

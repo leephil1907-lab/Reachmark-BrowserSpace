@@ -32,7 +32,7 @@ type DesktopApi = {
   createProxy: (proxy: { name: string; protocol: Protocol; host: string; port: number; username?: string; password?: string }) => Promise<DesktopProxy>;
   deleteProxy: (id: string) => Promise<{ deleted: boolean; detachedProfiles: number }>;
   testProxy: (id: string) => Promise<ProxyTestResult>;
-  verifyProfileIsolation: () => Promise<{ passed: boolean; partitionNamesStable: boolean; profilesChecked: number; details: { profileId: string; isolated: boolean }[] }>;
+  verifyProfileIsolation: () => Promise<{ passed: boolean; partitionNamesStable: boolean; persistenceVerified: boolean; baselineCreated: boolean; profilesChecked: number; details: { profileId: string; isolated: boolean }[] }>;
 };
 declare global { interface Window { browserSpace?: DesktopApi } }
 
@@ -190,7 +190,9 @@ export default function HomePage() {
     try {
       const result = await window.browserSpace.verifyProfileIsolation();
       setNotice(result.passed && result.partitionNamesStable
-        ? `Isolation check passed for ${result.profilesChecked} profiles: each session read its own temporary cookie and no other profile's marker. Partition names are stable across restarts.`
+        ? result.persistenceVerified
+          ? `Isolation and restart-persistence checks passed for ${result.profilesChecked} profiles. Each profile retains its own diagnostic marker across app restarts, and no foreign profile marker was visible.`
+          : `Isolation passed for ${result.profilesChecked} profiles. A persistent diagnostic marker was created; restart BrowserSpace and run Test isolation again to verify stored session data survived the restart.`
         : "Isolation check failed. Review the profile partition configuration before relying on session separation.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Profile isolation check failed."); }
     finally { setIsolationRunning(false); }

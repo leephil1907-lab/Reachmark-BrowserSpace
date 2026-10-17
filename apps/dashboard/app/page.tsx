@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import {
   Activity, ArrowDownUp, ArrowUpRight, Check, ChevronDown, CircleHelp,
   Clock3, Command, Globe2, Layers3, LockKeyhole, MoreHorizontal, Plus,
-  Search, Settings2, ShieldCheck, SlidersHorizontal, Wifi, X
+  Search, Settings2, ShieldCheck, Wifi, X
 } from "lucide-react";
 
 type Profile = {

@@ -64,7 +64,7 @@ npm run build:desktop
 npm start --workspace @browserspace/desktop
 ```
 
-The desktop runtime stores profile metadata and the shared proxy catalogue locally and launches a real Chromium window with a persistent session per profile. The dashboard connects through a restricted preload IPC bridge.
+The desktop runtime stores profile metadata and the shared proxy catalogue locally and launches a real Chromium window with a persistent session per profile. The dashboard connects through a restricted preload IPC bridge. To import a provider text file formatted as `host:port:username:password`, open `/proxies/import` in the local dashboard while BrowserSpace Desktop is running. The import page reads the file in the renderer and sends each entry through the existing desktop IPC handler; it does not upload the file to a web service. Proxy credentials still require Electron OS-backed `safeStorage`.
 
 ## Implementation status
 
@@ -72,12 +72,13 @@ The desktop runtime stores profile metadata and the shared proxy catalogue local
 - Responsive dashboard with profile search, create actions, launch/stop states, proxy assignment controls, a Reachmark browser-app icon, and reduced-motion-aware motion transitions.
 - Electron desktop runtime with persistent per-profile sessions, local profile metadata, a persistent shared proxy catalogue, and HTTP/HTTPS/SOCKS5 routing.
 - IPC handlers for profile lifecycle, shared proxy create/list/delete, profile-to-proxy assignment, live proxy connectivity tests, and profile isolation diagnostics.
+- Local bulk-import page at `/proxies/import` for provider TXT files formatted as `host:port:username:password`; it saves entries through the desktop bridge and does not claim to verify location or connectivity.
 - OS-backed encrypted storage for proxy credentials; ciphertext and plaintext credentials are excluded from renderer-facing catalogue objects.
 - CI workflow for dashboard and desktop typecheck/build/lint plus stable profile-partition unit tests.
 
 **Not yet complete**
-- Editing an existing proxy record, bulk import/export, and richer provider-specific proxy configuration.
-- Browser tab UI, bookmarks, profile notes/tags, bulk import/export and profile-data deletion confirmation flow.
+- Editing an existing proxy record, bulk export, duplicate detection during imports, and richer provider-specific proxy configuration.
+- Browser tab UI, bookmarks, profile notes/tags, bulk export and profile-data deletion confirmation flow.
 - A full automated Electron GUI test on a real desktop environment. The isolation diagnostic checks separate persistent partitions; the first run seeds a harmless marker on the reserved `.invalid` domain, and rerunning after restarting BrowserSpace verifies that each profile retained its own marker.
 - Real proxy connectivity test, measured request latency, and public egress-IP lookup are implemented; authenticated proxy behavior still needs end-to-end verification with a real authenticated endpoint.
 - Packaging/signing and a Windows installer.

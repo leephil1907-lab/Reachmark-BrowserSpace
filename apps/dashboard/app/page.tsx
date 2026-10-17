@@ -38,7 +38,7 @@ type ProxyItem = {
 };
 
 const initialProfiles: Profile[] = [
-  { id: "profile-001", name: "Research", description: "Reading & reference", color: "lime", proxy: "proxy-01", lastUsed: "Just now", status: "Ready" },
+  { id: "profile-001", name: "Research", description: "Reading & reference", color: "lime", proxy: null, lastUsed: "Just now", status: "Ready" },
   { id: "profile-002", name: "Client work", description: "Work accounts", color: "blue", proxy: null, lastUsed: "Yesterday", status: "Stopped" },
   { id: "profile-003", name: "Personal", description: "Everyday browsing", color: "violet", proxy: null, lastUsed: "Oct 14", status: "Stopped" }
 ];

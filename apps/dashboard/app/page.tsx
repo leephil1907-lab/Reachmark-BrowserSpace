@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Activity, AppWindow, ArrowDownUp, ArrowUpRight, Check, ChevronDown, CircleHelp,
   Clock3, Command, Globe2, Layers3, LockKeyhole, MoreHorizontal, Plus,
-  Search, Settings2, ShieldCheck, Wifi, X
+  Search, Settings2, ShieldCheck, Wifi, X, FlaskConical, Trash2, LoaderCircle
 } from "lucide-react";
 
 type Profile = {
@@ -17,14 +17,22 @@ type Profile = {
   status: "Ready" | "Stopped";
 };
 
-type DesktopProfile = { id: string; name: string; createdAt: string; proxy?: { protocol: "http" | "https" | "socks5"; host: string; port: number } };
+type Protocol = "http" | "https" | "socks5";
+type DesktopProxy = { id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastEgressIp?: string; hasCredentials: boolean };
+type DesktopProfile = { id: string; name: string; createdAt: string; proxyId?: string; proxy?: { protocol: Protocol; host: string; port: number } };
+type ProxyTestResult = { id: string; ok: boolean; egressIp?: string; error?: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string };
 type DesktopApi = {
   listProfiles: () => Promise<DesktopProfile[]>;
   getProfileStatus: (id: string) => Promise<{ running: boolean }>;
   createProfile: (name: string) => Promise<DesktopProfile>;
   launchProfile: (id: string) => Promise<unknown>;
   stopProfile: (id: string) => Promise<unknown>;
-  setProfileProxy: (id: string, proxy?: { protocol: "http" | "https" | "socks5"; host: string; port: number }) => Promise<unknown>;
+  setProfileProxy: (id: string, proxyId?: string) => Promise<unknown>;
+  listProxies: () => Promise<DesktopProxy[]>;
+  createProxy: (proxy: { name: string; protocol: Protocol; host: string; port: number; username?: string; password?: string }) => Promise<DesktopProxy>;
+  deleteProxy: (id: string) => Promise<{ deleted: boolean; detachedProfiles: number }>;
+  testProxy: (id: string) => Promise<ProxyTestResult>;
+  verifyProfileIsolation: () => Promise<{ passed: boolean; partitionNamesStable: boolean; profilesChecked: number; details: { profileId: string; isolated: boolean }[] }>;
 };
 declare global { interface Window { browserSpace?: DesktopApi } }
 
@@ -35,6 +43,11 @@ type ProxyItem = {
   protocol: "HTTP" | "HTTPS" | "SOCKS5";
   region: string;
   assigned: number;
+  hasCredentials?: boolean;
+  lastTestAt?: string;
+  lastTestStatus?: "passed" | "failed";
+  lastTestMessage?: string;
+  lastEgressIp?: string;
 };
 
 const initialProfiles: Profile[] = [
@@ -62,7 +75,12 @@ export default function HomePage() {
   const [profileName, setProfileName] = useState("");
   const [proxyName, setProxyName] = useState("");
   const [proxyHost, setProxyHost] = useState("");
+  const [proxyPort, setProxyPort] = useState("8080");
+  const [proxyUsername, setProxyUsername] = useState("");
+  const [proxyPassword, setProxyPassword] = useState("");
   const [proxyProtocol, setProxyProtocol] = useState<ProxyItem["protocol"]>("HTTP");
+  const [testingProxyIds, setTestingProxyIds] = useState<string[]>([]);
+  const [isolationRunning, setIsolationRunning] = useState(false);
   const [desktopConnected, setDesktopConnected] = useState(false);
   const [notice, setNotice] = useState("Workspace preview — changes stay in this tab and are not connected to a browser engine yet.");
 
@@ -71,29 +89,25 @@ export default function HomePage() {
     if (!api) return;
     let cancelled = false;
     setDesktopConnected(true);
-    void api.listProfiles().then(async (items) => {
+    void Promise.all([api.listProfiles(), api.listProxies()]).then(async ([items, savedProxies]) => {
       const mapped = await Promise.all(items.map(async (item, index) => {
         const state = await api.getProfileStatus(item.id);
-        const proxyId = item.proxy ? `${item.proxy.protocol}://${item.proxy.host}:${item.proxy.port}` : null;
-        return {
-          id: item.id, name: item.name, description: "Persistent desktop profile",
-          color: ["lime", "blue", "violet"][index % 3],
-          proxy: proxyId, lastUsed: "Local desktop", status: state.running ? "Ready" as const : "Stopped" as const,
-          proxyConfig: item.proxy
-        };
+        return { id: item.id, name: item.name, description: "Persistent desktop profile",
+          color: ["lime", "blue", "violet"][index % 3], proxy: item.proxyId ?? null,
+          lastUsed: "Local desktop", status: state.running ? "Ready" as const : "Stopped" as const };
       }));
       if (cancelled) return;
-      const unique = new Map<string, ProxyItem>();
-      for (const item of mapped) {
-        if (!item.proxyConfig) continue;
-        const id = `${item.proxyConfig.protocol}://${item.proxyConfig.host}:${item.proxyConfig.port}`;
-        if (!unique.has(id)) unique.set(id, { id, name: `${item.proxyConfig.host}`, endpoint: `${item.proxyConfig.host}:${item.proxyConfig.port}`, protocol: item.proxyConfig.protocol.toUpperCase() as ProxyItem["protocol"], region: "Saved locally", assigned: 0 });
-      }
-      setProxies(Array.from(unique.values()));
-      setProfiles(mapped.map(({ proxyConfig: _proxyConfig, ...item }) => item));
-      setNotice("Desktop runtime connected. Profile creation, launch/stop, and assigned proxy routing use the local Electron runtime.");
+      setProxies(savedProxies.map((item) => ({
+        id: item.id, name: item.name, endpoint: `${item.host.includes(":") ? "[" + item.host + "]" : item.host}:${item.port}`,
+        protocol: item.protocol.toUpperCase() as ProxyItem["protocol"],
+        region: item.lastTestStatus === "passed" ? `Egress ${item.lastEgressIp ?? "verified"}` : item.lastTestStatus === "failed" ? "Check failed" : "Not tested",
+        assigned: mapped.filter((profile) => profile.proxy === item.id).length, hasCredentials: item.hasCredentials,
+        lastTestAt: item.lastTestAt, lastTestStatus: item.lastTestStatus, lastTestMessage: item.lastTestMessage, lastEgressIp: item.lastEgressIp
+      })));
+      setProfiles(mapped);
+      setNotice("Desktop runtime connected. Shared proxies are stored locally, credentials use OS-backed encryption, and tests run through the configured proxy.");
     }).catch(() => {
-      if (!cancelled) setNotice("Desktop bridge detected, but profiles could not be loaded. Restart the desktop app and check its runtime logs.");
+      if (!cancelled) setNotice("Desktop bridge detected, but local profiles or the proxy catalogue could not be loaded. Restart the desktop app and check its runtime logs.");
     });
     return () => { cancelled = true; };
   }, []);
@@ -124,17 +138,62 @@ export default function HomePage() {
     setShowProfileForm(false);
   }
 
-  function createProxy() {
+  async function createProxy() {
     const name = proxyName.trim();
-    const endpoint = proxyHost.trim();
-    if (!name || !endpoint) return;
-    const id = `proxy-${String(Date.now()).slice(-6)}`;
-    setProxies((current) => [...current, { id, name, endpoint, protocol: proxyProtocol, region: "Not tested", assigned: 0 }]);
-    setProxyName("");
-    setProxyHost("");
-    setShowProxyForm(false);
-    setNotice("Proxy settings were added to the preview only. Credentials and real connectivity checks require the secure desktop/API service.");
-    setActiveNav("Proxies");
+    const host = proxyHost.trim().replace(/^\[|\]$/g, "");
+    const port = Number(proxyPort);
+    if (!name || !host || !Number.isInteger(port) || port < 1 || port > 65535) {
+      setNotice("Enter a proxy name, valid host, and port from 1 to 65535."); return;
+    }
+    if (!window.browserSpace && (proxyUsername.trim() || proxyPassword)) {
+      setNotice("Proxy credentials are saved only in the desktop app, where OS-backed secure storage is available."); return;
+    }
+    try {
+      if (window.browserSpace && desktopConnected) {
+        const saved = await window.browserSpace.createProxy({
+          name, protocol: proxyProtocol.toLowerCase() as Protocol, host, port,
+          username: proxyUsername || undefined, password: proxyPassword || undefined
+        });
+        setProxies((current) => [...current, {
+          id: saved.id, name: saved.name, endpoint: `${saved.host.includes(":") ? "[" + saved.host + "]" : saved.host}:${saved.port}`,
+          protocol: saved.protocol.toUpperCase() as ProxyItem["protocol"], region: "Not tested", assigned: 0, hasCredentials: saved.hasCredentials
+        }]);
+        setNotice("Proxy saved to the shared local catalogue. Credentials are encrypted by the operating system and never returned to the dashboard.");
+      } else {
+        const id = `proxy-${String(Date.now()).slice(-6)}`;
+        setProxies((current) => [...current, { id, name, endpoint: `${host}:${port}`, protocol: proxyProtocol, region: "Preview only", assigned: 0 }]);
+        setNotice("Proxy added to this browser preview only. Open the desktop app to persist it, securely store credentials, or run a real connectivity test.");
+      }
+      setProxyName(""); setProxyHost(""); setProxyPort("8080"); setProxyUsername(""); setProxyPassword("");
+      setShowProxyForm(false); setActiveNav("Proxies");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save this proxy."); }
+  }
+
+  async function runProxyTest(proxyId: string) {
+    if (!window.browserSpace || !desktopConnected) { setNotice("Real connectivity diagnostics require the BrowserSpace desktop runtime."); return; }
+    setTestingProxyIds((current) => current.includes(proxyId) ? current : [...current, proxyId]);
+    try {
+      const result = await window.browserSpace.testProxy(proxyId);
+      setProxies((current) => current.map((proxy) => proxy.id === proxyId ? {
+        ...proxy, region: result.ok ? `Egress ${result.egressIp ?? "verified"}` : "Check failed",
+        lastTestAt: result.lastTestAt, lastTestStatus: result.lastTestStatus,
+        lastTestMessage: result.lastTestMessage ?? result.error, lastEgressIp: result.egressIp
+      } : proxy));
+      setNotice(result.ok ? `Proxy test passed. Public egress IP: ${result.egressIp}. This confirms the test request reached the internet through the proxy.` : `Proxy test failed: ${result.error ?? "No connection."}`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Proxy connectivity test failed."); }
+    finally { setTestingProxyIds((current) => current.filter((id) => id !== proxyId)); }
+  }
+
+  async function runIsolationCheck() {
+    if (!window.browserSpace || !desktopConnected) { setNotice("Profile isolation checks require the BrowserSpace desktop runtime."); return; }
+    setIsolationRunning(true);
+    try {
+      const result = await window.browserSpace.verifyProfileIsolation();
+      setNotice(result.passed && result.partitionNamesStable
+        ? `Isolation check passed for ${result.profilesChecked} profiles: each session read its own temporary cookie and no other profile's marker. Partition names are stable across restarts.`
+        : "Isolation check failed. Review the profile partition configuration before relying on session separation.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Profile isolation check failed."); }
+    finally { setIsolationRunning(false); }
   }
 
   async function toggleProfile(profileId: string) {
@@ -165,45 +224,25 @@ export default function HomePage() {
   async function assignProxy(profileId: string, proxyId: string) {
     if (window.browserSpace && desktopConnected) {
       try {
-        const selected = proxies.find((proxy) => proxy.id === proxyId);
-        if (selected) {
-          const match = /^(.+):(\d{1,5})$/.exec(selected.endpoint);
-          if (!match) throw new Error("Proxy endpoint must be a hostname or IP address followed by a port.");
-          await window.browserSpace.setProfileProxy(profileId, {
-            protocol: selected.protocol.toLowerCase() as "http" | "https" | "socks5",
-            host: match[1], port: Number(match[2])
-          });
-        } else {
-          await window.browserSpace.setProfileProxy(profileId, undefined);
-        }
+        await window.browserSpace.setProfileProxy(profileId, proxyId || undefined);
         setProfiles((current) => current.map((item) => item.id === profileId ? { ...item, proxy: proxyId || null } : item));
         setProxies((current) => current.map((proxy) => ({ ...proxy, assigned: profiles.filter((profile) => profile.id !== profileId && profile.proxy === proxy.id).length + (proxy.id === proxyId ? 1 : 0) })));
-        setNotice("Proxy assignment saved to the desktop profile. The setting takes effect the next time you launch that profile.");
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Could not save the proxy assignment.");
-      }
+        setNotice("Shared proxy assignment saved to the profile. Routing settings are applied the next time the profile launches.");
+      } catch (error) { setNotice(error instanceof Error ? error.message : "Could not save the proxy assignment."); }
       return;
     }
     setProfiles((current) => current.map((item) => item.id === profileId ? { ...item, proxy: proxyId || null } : item));
     setProxies((current) => current.map((proxy) => ({ ...proxy, assigned: profiles.filter((profile) => profile.id !== profileId && profile.proxy === proxy.id).length + (proxy.id === proxyId ? 1 : 0) })));
-    setNotice("Assignment updated in this preview only. Launch the desktop app to persist proxy settings and route traffic.");
+    setNotice("Assignment updated in this preview only. Launch the desktop app to persist profile and shared proxy settings.");
   }
 
   async function removeProxy(proxyId: string) {
-    const assignedProfiles = profiles.filter((profile) => profile.proxy === proxyId);
-    if (window.browserSpace && desktopConnected) {
-      try {
-        await Promise.all(assignedProfiles.map((profile) => window.browserSpace!.setProfileProxy(profile.id, undefined)));
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : "Could not remove proxy assignments.");
-        return;
-      }
-    }
-    setProxies((current) => current.filter((item) => item.id !== proxyId));
-    setProfiles((current) => current.map((profile) => profile.proxy === proxyId ? { ...profile, proxy: null } : profile));
-    setNotice(desktopConnected
-      ? "Proxy removed from the dashboard and detached from assigned desktop profiles."
-      : "Proxy removed from this preview and detached from preview profiles.");
+    try {
+      if (window.browserSpace && desktopConnected) await window.browserSpace.deleteProxy(proxyId);
+      setProxies((current) => current.filter((item) => item.id !== proxyId));
+      setProfiles((current) => current.map((profile) => profile.proxy === proxyId ? { ...profile, proxy: null } : profile));
+      setNotice(desktopConnected ? "Proxy removed from the shared catalogue and detached from assigned profiles." : "Proxy removed from this preview and detached from preview profiles.");
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not remove the shared proxy."); }
   }
 
   const activeProfiles = profiles.filter((profile) => profile.status === "Ready").length;
@@ -256,7 +295,7 @@ export default function HomePage() {
           </div>}
 
           {(activeNav === "Overview" || activeNav === "Profiles") && <section className="panel panel-enter">
-            <div className="panel-header"><div><h2>Browser profiles</h2><p>Separate sessions for different parts of your life and work.</p></div><div className="table-actions"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search profiles" /></label><button className="icon-button" aria-label="Sort profiles" onClick={() => setProfiles((current) => [...current].reverse())}><ArrowDownUp size={16} /></button><button className="button compact" onClick={() => setShowProfileForm(true)}><Plus size={15} /> Create</button></div></div>
+            <div className="panel-header"><div><h2>Browser profiles</h2><p>Separate sessions for different parts of your life and work.</p></div><div className="table-actions"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search profiles" /></label><button className="icon-button" aria-label="Sort profiles" onClick={() => setProfiles((current) => [...current].reverse())}><ArrowDownUp size={16} /></button><button className="button secondary compact" onClick={() => { void runIsolationCheck(); }} disabled={isolationRunning || !desktopConnected}>{isolationRunning ? <LoaderCircle size={14} className="spin-icon" /> : <ShieldCheck size={14} />} Test isolation</button><button className="button compact" onClick={() => setShowProfileForm(true)}><Plus size={15} /> Create</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>PROFILE</th><th>PROXY</th><th>LAST USED</th><th>STATUS</th><th /></tr></thead><tbody>
               {filteredProfiles.map((profile) => <tr key={profile.id}><td><div className="profile-cell"><span className={`profile-icon ${profile.color}`}><Globe2 size={17} /></span><span><b>{profile.name}</b><small>{profile.description}</small></span></div></td><td><select className="proxy-select" value={profile.proxy ?? ""} onChange={(event) => assignProxy(profile.id, event.target.value)} aria-label={`Proxy for ${profile.name}`}><option value="">Direct connection</option>{proxies.map((proxy) => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</select></td><td className="muted-cell">{profile.lastUsed}</td><td><span className={profile.status === "Ready" ? "status ready" : "status stopped"}><span />{profile.status}</span></td><td><button className="row-action" onClick={() => toggleProfile(profile.id)}>{profile.status === "Ready" ? "Stop" : "Launch"} <ArrowUpRight size={14} /></button></td></tr>)}
               {filteredProfiles.length === 0 && <tr><td colSpan={5} className="empty-state">No profiles match “{query}”.</td></tr>}
@@ -266,8 +305,8 @@ export default function HomePage() {
 
           {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel panel-enter">
             <div className="panel-header"><div><h2>Proxy manager</h2><p>Keep proxy settings organized and assign them per profile.</p></div><button className="button secondary compact" onClick={() => setShowProxyForm(true)}><Plus size={15} /> Add proxy</button></div>
-            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}</span></div><span className="proxy-region"><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" onClick={() => { void removeProxy(proxy.id); }}>Remove <X size={13} /></button></div>)}</div>}
-            <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials and live proxy diagnostics are not yet exposed in the dashboard. Saved profile assignments are applied by the desktop runtime.</span></div>
+            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}{proxy.hasCredentials ? " · Authenticated" : ""}</span>{proxy.lastTestAt && <small className={proxy.lastTestStatus === "passed" ? "proxy-test-success" : "proxy-test-failed"}>{proxy.lastTestMessage}{proxy.lastEgressIp ? ` · IP ${proxy.lastEgressIp}` : ""}</small>}</div><span className={proxy.lastTestStatus === "passed" ? "proxy-region proxy-ok" : proxy.lastTestStatus === "failed" ? "proxy-region proxy-bad" : "proxy-region"}><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" disabled={testingProxyIds.includes(proxy.id)} onClick={() => { void runProxyTest(proxy.id); }}>{testingProxyIds.includes(proxy.id) ? <LoaderCircle size={13} className="spin-icon" /> : <FlaskConical size={13} />} Test</button><button className="row-action danger-action" onClick={() => { void removeProxy(proxy.id); }}><Trash2 size={13} /> Remove</button></div>)}</div>}
+            <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials are encrypted with OS-backed secure storage. Test checks the proxy connection and reports its public egress IP; profile routing applies on next launch.</span></div>
           </section>}
 
           {activeNav === "Activity" && <section className="panel activity-panel panel-enter"><div className="panel-header"><div><h2>Workspace activity</h2><p>Actions in this session.</p></div><Clock3 size={18} /></div><div className="activity-item"><span className="activity-icon"><Check size={15} /></span><span><b>Workspace opened</b><small>Preview UI loaded successfully. No browser processes or network checks were run.</small></span><time>Now</time></div><div className="activity-item"><span className="activity-icon"><LockKeyhole size={15} /></span><span><b>Privacy boundary active</b><small>This dashboard does not collect proxy passwords or profile cookies.</small></span><time>Now</time></div></section>}
@@ -278,8 +317,8 @@ export default function HomePage() {
 
       {(showProfileForm || showProxyForm) && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setShowProfileForm(false); setShowProxyForm(false); } }}>
         <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-          <div className="modal-top"><div><span className="modal-eyebrow">{showProfileForm ? "PROFILE SETUP" : "NETWORK SETUP"}</span><h2 id="modal-title">{showProfileForm ? "Create a profile" : "Add a proxy"}</h2><p>{showProfileForm ? "Give this browsing session a clear purpose." : "Save endpoint details for this workspace; assigning it to a desktop profile persists the routing settings."}</p></div><button className="icon-button" aria-label="Close" onClick={() => { setShowProfileForm(false); setShowProxyForm(false); }}><X size={17} /></button></div>
-          {showProfileForm ? <form onSubmit={(event) => { event.preventDefault(); createProfile(); }}><label className="field-label">Profile name<input autoFocus value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="e.g. Design research" maxLength={48} required /></label><div className="field-note"><LockKeyhole size={14} /> {desktopConnected ? "This profile will be saved to the local desktop store." : "Run the desktop app to save this profile persistently."}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProfileForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Create profile</button></div></form> : <form onSubmit={(event) => { event.preventDefault(); createProxy(); }}><label className="field-label">Proxy name<input autoFocus value={proxyName} onChange={(event) => setProxyName(event.target.value)} placeholder="e.g. Office gateway" maxLength={48} required /></label><label className="field-label">Protocol<select value={proxyProtocol} onChange={(event) => setProxyProtocol(event.target.value as ProxyItem["protocol"])}><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option></select></label><label className="field-label">Host and port<input value={proxyHost} onChange={(event) => setProxyHost(event.target.value)} placeholder="proxy.example.net:8080" required pattern="[^\s:/]+:[0-9]{1,5}" title="Enter a hostname or IP address followed by a colon and port, e.g. proxy.example.net:8080" /></label><div className="field-note"><LockKeyhole size={14} /> Credentials and live connectivity tests are not available in this form yet.</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProxyForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Add proxy</button></div></form>}
+          <div className="modal-top"><div><span className="modal-eyebrow">{showProfileForm ? "PROFILE SETUP" : "NETWORK SETUP"}</span><h2 id="modal-title">{showProfileForm ? "Create a profile" : "Add a proxy"}</h2><p>{showProfileForm ? "Give this browsing session a clear purpose." : "Save a reusable endpoint in the shared catalogue. Credentials are encrypted locally and never displayed after saving."}</p></div><button className="icon-button" aria-label="Close" onClick={() => { setShowProfileForm(false); setShowProxyForm(false); }}><X size={17} /></button></div>
+          {showProfileForm ? <form onSubmit={(event) => { event.preventDefault(); createProfile(); }}><label className="field-label">Profile name<input autoFocus value={profileName} onChange={(event) => setProfileName(event.target.value)} placeholder="e.g. Design research" maxLength={48} required /></label><div className="field-note"><LockKeyhole size={14} /> {desktopConnected ? "This profile will be saved to the local desktop store." : "Run the desktop app to save this profile persistently."}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProfileForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Create profile</button></div></form> : <form onSubmit={(event) => { event.preventDefault(); void createProxy(); }}><label className="field-label">Proxy name<input autoFocus value={proxyName} onChange={(event) => setProxyName(event.target.value)} placeholder="e.g. Office gateway" maxLength={64} required /></label><label className="field-label">Protocol<select value={proxyProtocol} onChange={(event) => setProxyProtocol(event.target.value as ProxyItem["protocol"])}><option>HTTP</option><option>HTTPS</option><option>SOCKS5</option></select></label><div className="field-grid"><label className="field-label">Host<input value={proxyHost} onChange={(event) => setProxyHost(event.target.value)} placeholder="proxy.example.net" required /></label><label className="field-label">Port<input type="number" min="1" max="65535" value={proxyPort} onChange={(event) => setProxyPort(event.target.value)} required /></label></div><div className="field-grid"><label className="field-label">Username <span className="field-optional">optional</span><input autoComplete="off" value={proxyUsername} onChange={(event) => setProxyUsername(event.target.value)} placeholder="Proxy username" maxLength={512} /></label><label className="field-label">Password <span className="field-optional">optional</span><input type="password" autoComplete="new-password" value={proxyPassword} onChange={(event) => setProxyPassword(event.target.value)} placeholder="Proxy password" maxLength={2048} /></label></div><div className="field-note"><LockKeyhole size={14} /> {desktopConnected ? "Credentials are encrypted by OS-backed secure storage and never returned to the UI. Use Test after saving to verify connection and public egress IP." : "Preview mode cannot securely persist credentials or run a real proxy check. Open the desktop app for those features."}</div><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setShowProxyForm(false)}>Cancel</button><button type="submit" className="button primary"><Plus size={15} /> Save proxy</button></div></form>}
         </section>
       </div>}
       <div className="bottom-spacer" />

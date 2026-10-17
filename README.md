@@ -44,3 +44,42 @@ This repository is being initialized. Features must be described as implemented 
 ## License
 
 The initial BrowserSpace implementation is independent. Add an explicit project license before distributing builds or accepting external contributions.
+
+
+## Run the current prototype
+
+Requirements: Node.js 20.11+ and npm.
+
+```bash
+npm install
+npm run dev
+```
+
+The dashboard opens on the Next.js development server. Its profile/proxy lists are currently preview state, so changes do not persist across refreshes and are not sent to Electron.
+
+To compile and open the desktop runtime in a separate terminal:
+
+```bash
+npm run build:desktop
+npm start --workspace @browserspace/desktop
+```
+
+The desktop runtime stores profile metadata locally and launches a real Chromium window with a persistent session per profile. The temporary desktop status window and the web dashboard are not yet connected.
+
+## Implementation status
+
+**Present in the repository**
+- Responsive dashboard with profile search, create actions, preview launch/stop states, proxy assignment controls and proxy list UI.
+- Electron desktop foundation with persistent per-profile sessions, profile metadata persistence, direct/system proxy selection, and unauthenticated HTTP/HTTPS/SOCKS5 routing.
+- IPC handlers for profile create/list/rename/launch/stop/delete and per-profile proxy settings.
+- OS-backed encrypted storage for proxy credentials submitted through the IPC API; credential ciphertext is removed from renderer-facing profile objects.
+- CI workflow for dashboard and desktop typecheck/build/lint.
+
+**Not yet complete**
+- Dashboard-to-Electron IPC integration and persisted shared proxy catalogue.
+- Browser tab UI, bookmarks, profile notes/tags, bulk import/export and profile-data deletion confirmation flow.
+- End-to-end tests and verified CI results. This environment has pushed the source but has not executed the workflow.
+- Live proxy diagnostics (connectivity, exit IP, latency) and reliable authenticated-proxy end-to-end testing.
+- Packaging/signing and a Windows installer.
+
+Do not use the dashboard preview state as proof that a real browser session or proxy connection is active.

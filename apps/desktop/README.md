@@ -13,7 +13,7 @@ This Electron workspace is an early runtime foundation and is not yet connected 
 ## Known gaps
 
 - The dashboard does not yet use the IPC bridge.
-- Proxy authentication and encrypted credential storage are not implemented. Do not use authenticated proxies with this version.
+- Proxy credentials supplied through the IPC bridge are encrypted with Electron safeStorage before persistence; encrypted values are redacted from renderer responses. The dashboard credential form and a full cross-platform secure-storage audit are still pending.
 - Proxy connectivity checks, external-IP checks and latency measurements are not implemented.
 - Profile deletion preserves Chromium session data; explicit data erasure is not implemented.
 - The desktop status window is temporary, not the finished browser UI.

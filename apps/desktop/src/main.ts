@@ -164,6 +164,16 @@ app.whenReady().then(async () => {
     if (url.startsWith("https://") || url.startsWith("http://")) void shell.openExternal(url);
     return { action: "deny" };
   });
+  win.webContents.on("will-navigate", (event, navigationUrl) => {
+    try {
+      if (new URL(navigationUrl).origin !== parsedDashboardUrl.origin) {
+        event.preventDefault();
+        if (navigationUrl.startsWith("https://") || navigationUrl.startsWith("http://")) void shell.openExternal(navigationUrl);
+      }
+    } catch {
+      event.preventDefault();
+    }
+  });
   try {
     await win.loadURL(parsedDashboardUrl.toString());
   } catch {

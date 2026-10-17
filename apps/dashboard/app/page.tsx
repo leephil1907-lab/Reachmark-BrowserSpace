@@ -189,6 +189,23 @@ export default function HomePage() {
     setNotice("Assignment updated in this preview only. Launch the desktop app to persist proxy settings and route traffic.");
   }
 
+  async function removeProxy(proxyId: string) {
+    const assignedProfiles = profiles.filter((profile) => profile.proxy === proxyId);
+    if (window.browserSpace && desktopConnected) {
+      try {
+        await Promise.all(assignedProfiles.map((profile) => window.browserSpace!.setProfileProxy(profile.id, undefined)));
+      } catch (error) {
+        setNotice(error instanceof Error ? error.message : "Could not remove proxy assignments.");
+        return;
+      }
+    }
+    setProxies((current) => current.filter((item) => item.id !== proxyId));
+    setProfiles((current) => current.map((profile) => profile.proxy === proxyId ? { ...profile, proxy: null } : profile));
+    setNotice(desktopConnected
+      ? "Proxy removed from the dashboard and detached from assigned desktop profiles."
+      : "Proxy removed from this preview and detached from preview profiles.");
+  }
+
   const activeProfiles = profiles.filter((profile) => profile.status === "Ready").length;
 
   return (
@@ -249,7 +266,7 @@ export default function HomePage() {
 
           {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel">
             <div className="panel-header"><div><h2>Proxy manager</h2><p>Keep proxy settings organized and assign them per profile.</p></div><button className="button secondary compact" onClick={() => setShowProxyForm(true)}><Plus size={15} /> Add proxy</button></div>
-            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}</span></div><span className="proxy-region"><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" onClick={() => { setProxies((current) => current.filter((item) => item.id !== proxy.id)); setProfiles((current) => current.map((profile) => profile.proxy === proxy.id ? { ...profile, proxy: null } : profile)); setNotice("Proxy removed from the preview and detached from preview profiles. No live network configuration was changed."); }}>Remove <X size={13} /></button></div>)}</div>}
+            {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}</span></div><span className="proxy-region"><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" onClick={() => { void removeProxy(proxy.id); }}>Remove <X size={13} /></button></div>)}</div>}
             <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials and live proxy diagnostics are not yet exposed in the dashboard. Saved profile assignments are applied by the desktop runtime.</span></div>
           </section>}
 

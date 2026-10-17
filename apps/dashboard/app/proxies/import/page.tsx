@@ -7,9 +7,9 @@ import Link from "next/link";
 type Protocol = "http" | "https" | "socks5";
 type SavedProxy = { id: string; name: string; host: string; port: number; protocol: Protocol; hasCredentials: boolean };
 type BrowserSpaceApi = {
+  listProxies: () => Promise<SavedProxy[]>;
   createProxy: (proxy: { name: string; protocol: Protocol; host: string; port: number; username?: string; password?: string }) => Promise<SavedProxy>;
 };
-declare global { interface Window { browserSpace?: BrowserSpaceApi } }
 
 type ParsedProxy = { host: string; port: number; username: string; password: string; line: number };
 
@@ -54,7 +54,8 @@ export default function ImportProxiesPage() {
   }
 
   async function importProxies() {
-    if (!window.browserSpace) {
+    const desktopApi = (window as unknown as { browserSpace?: BrowserSpaceApi }).browserSpace;
+    if (!desktopApi) {
       setMessage("Open this page inside the BrowserSpace desktop app. The web preview cannot securely save proxy credentials.");
       return;
     }
@@ -66,13 +67,18 @@ export default function ImportProxiesPage() {
     setMessage("");
     setErrors(parsed.errors);
     let saved = 0;
+    let skipped = 0;
     const failures: string[] = [];
     try {
+      const existing = await desktopApi.listProxies();
+      const seen = new Set(existing.map((proxy) => `${proxy.protocol}|${proxy.host.toLowerCase()}|${proxy.port}`));
       for (let index = 0; index < parsed.proxies.length; index++) {
         const item = parsed.proxies[index];
         setProgress(`Saving proxy ${index + 1} of ${parsed.proxies.length}…`);
+        const key = `${protocol}|${item.host.toLowerCase()}|${item.port}`;
+        if (seen.has(key)) { skipped++; continue; }
         try {
-          await window.browserSpace.createProxy({
+          await desktopApi.createProxy({
             name: `Webshare ${item.host}:${item.port}`,
             protocol,
             host: item.host,
@@ -81,13 +87,16 @@ export default function ImportProxiesPage() {
             password: item.password
           });
           saved++;
+          seen.add(key);
         } catch (error) {
           failures.push(`Line ${item.line}: ${error instanceof Error ? error.message : "Could not save proxy"}`);
         }
       }
-      setMessage(`Imported ${saved} of ${parsed.proxies.length} proxy entries. Credentials were passed to the desktop secure-storage handler; they are not displayed here.`);
+      setMessage(`Import finished: ${saved} saved, ${skipped} duplicate endpoints skipped, ${failures.length} failed, out of ${parsed.proxies.length} valid entries. Credentials were passed to the desktop secure-storage handler and are not displayed here.`);
       if (failures.length) setErrors((current) => [...current, ...failures]);
       if (saved > 0) setProgress("Import finished. Return to Proxy manager and test each endpoint.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not read the existing proxy catalogue. No import was completed.");
     } finally {
       setBusy(false);
     }

@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, session, shell } from "electron";
+import { app, BrowserWindow, ipcMain, safeStorage, session, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-type ProxyConfig = { protocol: "http" | "https" | "socks5"; host: string; port: number };
+type ProxyConfig = { protocol: "http" | "https" | "socks5"; host: string; port: number; usernameCiphertext?: string; passwordCiphertext?: string };
 type Profile = { id: string; name: string; createdAt: string; proxy?: ProxyConfig; startUrl?: string };
 const dataFile = () => path.join(app.getPath("userData"), "profiles.json");
 const windows = new Map<string, BrowserWindow>();
@@ -31,9 +31,25 @@ function validateProxy(value: unknown): ProxyConfig | undefined {
   if (!["http", "https", "socks5"].includes(String(p.protocol))) throw new Error("Unsupported proxy protocol.");
   if (typeof p.host !== "string" || !/^[a-zA-Z0-9.-]{1,253}$/.test(p.host)) throw new Error("Invalid proxy host.");
   if (!Number.isInteger(p.port) || Number(p.port) < 1 || Number(p.port) > 65535) throw new Error("Proxy port must be between 1 and 65535.");
-  return { protocol: p.protocol as ProxyConfig["protocol"], host: p.host, port: Number(p.port) };
+  const raw = value as Partial<ProxyConfig> & { username?: unknown; password?: unknown };
+  let usernameCiphertext = p.usernameCiphertext;
+  let passwordCiphertext = p.passwordCiphertext;
+  if (typeof raw.username === "string" || typeof raw.password === "string") {
+    if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure credential storage is unavailable on this device.");
+    if (typeof raw.username === "string" && raw.username.length > 512) throw new Error("Proxy username is too long.");
+    if (typeof raw.password === "string" && raw.password.length > 2048) throw new Error("Proxy password is too long.");
+    usernameCiphertext = typeof raw.username === "string" && raw.username.length ? safeStorage.encryptString(raw.username).toString("base64") : undefined;
+    passwordCiphertext = typeof raw.password === "string" && raw.password.length ? safeStorage.encryptString(raw.password).toString("base64") : undefined;
+  }
+  return {
+    protocol: p.protocol as ProxyConfig["protocol"], host: p.host, port: Number(p.port),
+    usernameCiphertext, passwordCiphertext
+  };
 }
-function safeProfile(profile: Profile) { return { ...profile, proxy: profile.proxy ? { ...profile.proxy } : undefined }; }
+function safeProfile(profile: Profile) {
+  const proxy = profile.proxy ? { protocol: profile.proxy.protocol, host: profile.proxy.host, port: profile.proxy.port } : undefined;
+  return { ...profile, proxy };
+}
 
 async function launchProfile(id: string) {
   const profile = profiles.find((p) => p.id === id);
@@ -97,6 +113,27 @@ function registerIpc() {
     return { deleted: true, profileId: input.id, sessionDataPreserved: true };
   });
 }
+
+app.on("login", (event, webContents, _details, authInfo, callback) => {
+  if (!authInfo.isProxy) return;
+  const profile = profiles.find((item) => {
+    const win = windows.get(item.id);
+    return !!win && !win.isDestroyed() && win.webContents.id === webContents.id &&
+      !!item.proxy && item.proxy.host === authInfo.host && item.proxy.port === authInfo.port &&
+      !!item.proxy.usernameCiphertext;
+  });
+  if (!profile?.proxy?.usernameCiphertext) return;
+  try {
+    const username = safeStorage.decryptString(Buffer.from(profile.proxy.usernameCiphertext, "base64"));
+    const password = profile.proxy.passwordCiphertext
+      ? safeStorage.decryptString(Buffer.from(profile.proxy.passwordCiphertext, "base64"))
+      : "";
+    event.preventDefault();
+    callback(username, password);
+  } catch {
+    // Never log credential material. Leave Chromium's normal auth failure flow intact.
+  }
+});
 
 app.whenReady().then(async () => {
   await loadProfiles(); registerIpc();

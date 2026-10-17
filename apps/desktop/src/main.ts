@@ -197,23 +197,31 @@ async function testProxy(proxy: ProxyRecord) {
 async function verifyProfileIsolation() {
   const targets = profiles.slice(0, 2);
   if (targets.length < 2) throw new Error("Create at least two profiles to run the isolation check.");
-  const marker = "bs-isolation-" + randomUUID();
+  const marker = "__browserspace_isolation_probe";
   const sessions = targets.map((profile) => ({ profile, ses: session.fromPartition(profilePartition(profile.id)) }));
-  try {
-    for (const { profile, ses } of sessions) {
-      await ses.cookies.set({ url: "https://browserspace.invalid/", name: marker, value: profile.id, path: "/", secure: true, httpOnly: true, expirationDate: Math.floor(Date.now() / 1000) + 120 });
-    }
-    const reads = await Promise.all(sessions.map(async ({ profile, ses }) => {
-      const cookies = await ses.cookies.get({ url: "https://browserspace.invalid/", name: marker });
-      return { profileId: profile.id, ownMarker: cookies.some((cookie) => cookie.value === profile.id), foreignMarkers: cookies.filter((cookie) => cookie.value !== profile.id).length };
-    }));
-    const passed = reads.every((item) => item.ownMarker && item.foreignMarkers === 0);
-    return { passed, partitionNamesStable: sessions.every(({ profile }) => profilePartition(profile.id) === "persist:browserspace-" + profile.id), profilesChecked: reads.length, details: reads.map((item) => ({ profileId: item.profileId, isolated: item.ownMarker && item.foreignMarkers === 0 })) };
-  } finally {
-    await Promise.all(sessions.map(async ({ ses }) => {
-      try { await ses.cookies.remove("https://browserspace.invalid/", marker); } catch { /* best-effort cleanup */ }
-    }));
+  // Read before writing: a matching marker here proves the persistent profile partition survived a prior app run.
+  const priorMarkers = await Promise.all(sessions.map(async ({ profile, ses }) => {
+    const cookies = await ses.cookies.get({ url: "https://browserspace.invalid/", name: marker });
+    return { profileId: profile.id, persistedFromPreviousRun: cookies.some((cookie) => cookie.value === profile.id) };
+  }));
+  for (const { profile, ses } of sessions) {
+    await ses.cookies.set({
+      url: "https://browserspace.invalid/", name: marker, value: profile.id, path: "/", secure: true, httpOnly: true,
+      expirationDate: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 180
+    });
   }
+  const reads = await Promise.all(sessions.map(async ({ profile, ses }) => {
+    const cookies = await ses.cookies.get({ url: "https://browserspace.invalid/", name: marker });
+    return { profileId: profile.id, ownMarker: cookies.some((cookie) => cookie.value === profile.id), foreignMarkers: cookies.filter((cookie) => cookie.value !== profile.id).length };
+  }));
+  const passed = reads.every((item) => item.ownMarker && item.foreignMarkers === 0);
+  const persistenceVerified = priorMarkers.every((item) => item.persistedFromPreviousRun);
+  return {
+    passed, partitionNamesStable: sessions.every(({ profile }) => profilePartition(profile.id) === "persist:browserspace-" + profile.id),
+    persistenceVerified, baselineCreated: !persistenceVerified, profilesChecked: reads.length,
+    details: reads.map((item) => ({ profileId: item.profileId, isolated: item.ownMarker && item.foreignMarkers === 0 })),
+    persistence: priorMarkers
+  };
 }
 function registerIpc() {
   ipcMain.handle("profiles:list", () => profiles.map(safeProfile));

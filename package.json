@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "npm run dev --workspace @browserspace/dashboard",
     "build": "npm run build --workspace @browserspace/dashboard",
+    "build:desktop": "npm run build --workspace @browserspace/desktop",
     "lint": "npm run lint --workspace @browserspace/dashboard",
-    "typecheck": "npm run typecheck --workspace @browserspace/dashboard"
+    "typecheck": "npm run typecheck --workspace @browserspace/dashboard && npm run typecheck --workspace @browserspace/desktop"
   },
   "engines": { "node": ">=20.11.0" }
 }

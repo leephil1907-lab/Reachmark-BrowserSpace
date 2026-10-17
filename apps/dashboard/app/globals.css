@@ -54,3 +54,17 @@ tbody tr:hover .profile-icon{transform:scale(1.06);box-shadow:0 0 18px #d6f26912
 @keyframes backdrop-in{from{opacity:0}to{opacity:1}}
 @media(max-width:760px){.shell:before{width:24rem;height:24rem;right:-15rem;top:-13rem}.shell:after{left:-10rem;bottom:-18rem}.nav-item:hover{transform:none}.proxy-row:hover{padding-left:0;padding-right:0}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.shell:before,.shell:after,.brand-mark:after,.pulse-dot,.footer-dot{animation:none!important}.motion-shell .sidebar,.motion-shell .topbar,.page-enter,.stagger-in>.stat-card,.panel-enter,.notice{animation:none!important}.nav-item,.panel,.stat-card,.workspace-card,.proxy-row,.activity-item,.button,.icon-button,.profile-icon{transition:none!important}}
+
+.field-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(90px,.7fr);gap:12px}
+.field-optional{color:#74816f;font-size:10px;font-weight:400}
+.proxy-details small{display:block;margin-top:6px;font-size:10px;line-height:1.5}
+.proxy-test-success{color:#b9d98a}
+.proxy-test-failed{color:#f0a39a}
+.proxy-region.proxy-ok{color:#b9d98a}
+.proxy-region.proxy-bad{color:#f0a39a}
+.row-action:disabled{opacity:.55;cursor:wait}
+.danger-action{color:#d9a39b}
+.danger-action:hover{color:#ffb6a8;border-color:#694139;background:#2a1d1a}
+.spin-icon{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:520px){.field-grid{grid-template-columns:1fr;gap:0}}

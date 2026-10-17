@@ -8,7 +8,7 @@ type Protocol = "http" | "https" | "socks5";
 type ProxyRecord = {
   id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string;
   usernameCiphertext?: string; passwordCiphertext?: string;
-  lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastEgressIp?: string;
+  lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string;
 };
 type Profile = { id: string; name: string; createdAt: string; proxyId?: string; proxy?: { protocol: Protocol; host: string; port: number; usernameCiphertext?: string; passwordCiphertext?: string }; startUrl?: string };
 const dataFile = () => path.join(app.getPath("userData"), "profiles.json");
@@ -84,7 +84,7 @@ function safeProxy(proxy: ProxyRecord) {
   return {
     id: proxy.id, name: proxy.name, protocol: proxy.protocol, host: proxy.host, port: proxy.port,
     createdAt: proxy.createdAt, lastTestAt: proxy.lastTestAt, lastTestStatus: proxy.lastTestStatus,
-    lastTestMessage: proxy.lastTestMessage, lastEgressIp: proxy.lastEgressIp,
+    lastTestMessage: proxy.lastTestMessage, lastTestLatencyMs: proxy.lastTestLatencyMs, lastEgressIp: proxy.lastEgressIp,
     hasCredentials: Boolean(proxy.usernameCiphertext)
   };
 }
@@ -154,6 +154,7 @@ async function testProxy(proxy: ProxyRecord) {
   activeProbeProxy = proxy;
   const probe = session.fromPartition("browserspace-probe-" + randomUUID());
   const controller = new AbortController();
+  const startedAt = Date.now();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
     await configureSession(probe, proxy);
@@ -165,9 +166,10 @@ async function testProxy(proxy: ProxyRecord) {
     proxy.lastTestAt = new Date().toISOString();
     proxy.lastTestStatus = "passed";
     proxy.lastTestMessage = "Connection successful";
+    proxy.lastTestLatencyMs = Date.now() - startedAt;
     proxy.lastEgressIp = ip;
     await saveProxies();
-    return { ...safeProxy(proxy), ok: true, egressIp: ip, elapsedMs: undefined };
+    return { ...safeProxy(proxy), ok: true, egressIp: ip, elapsedMs: proxy.lastTestLatencyMs };
   } catch (error) {
     const message = error instanceof Error && error.name === "AbortError"
       ? "Connection timed out after 12 seconds."
@@ -175,6 +177,7 @@ async function testProxy(proxy: ProxyRecord) {
     proxy.lastTestAt = new Date().toISOString();
     proxy.lastTestStatus = "failed";
     proxy.lastTestMessage = message;
+    proxy.lastTestLatencyMs = Date.now() - startedAt;
     proxy.lastEgressIp = undefined;
     await saveProxies();
     return { ...safeProxy(proxy), ok: false, error: message };

@@ -79,7 +79,7 @@ The desktop runtime stores profile metadata and the shared proxy catalogue local
 - Editing an existing proxy record, bulk import/export, and richer provider-specific proxy configuration.
 - Browser tab UI, bookmarks, profile notes/tags, bulk import/export and profile-data deletion confirmation flow.
 - A full automated Electron GUI test on a real desktop environment. The isolation diagnostic checks separate persistent partitions; the first run seeds a harmless marker on the reserved `.invalid` domain, and rerunning after restarting BrowserSpace verifies that each profile retained its own marker.
-- Real proxy connectivity test and public egress-IP lookup are implemented; authenticated proxy behavior still needs end-to-end verification with a real authenticated endpoint. Latency is not currently reported.
+- Real proxy connectivity test, measured request latency, and public egress-IP lookup are implemented; authenticated proxy behavior still needs end-to-end verification with a real authenticated endpoint.
 - Packaging/signing and a Windows installer.
 
 Do not use the dashboard preview state as proof that a real browser session or proxy connection is active.

@@ -1,0 +1,14 @@
+{
+  "name": "reachmark-browserspace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-first isolated browser profiles with per-profile proxy management",
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @browserspace/dashboard",
+    "build": "npm run build --workspace @browserspace/dashboard",
+    "lint": "npm run lint --workspace @browserspace/dashboard",
+    "typecheck": "npm run typecheck --workspace @browserspace/dashboard"
+  },
+  "engines": { "node": ">=20.11.0" }
+}

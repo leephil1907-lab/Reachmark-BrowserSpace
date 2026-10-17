@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "electron .",
-    "test": "npm run build && node --test dist/profile-utils.test.js"
+    "test": "npm run build && node --test dist/profile-utils.test.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "electron": "^35.0.0"

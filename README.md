@@ -76,7 +76,7 @@ The desktop runtime stores profile metadata locally and launches a real Chromium
 - CI workflow for dashboard and desktop typecheck/build/lint.
 
 **Not yet complete**
-- Dashboard-to-Electron IPC integration and persisted shared proxy catalogue.
+- Persisted shared proxy catalogue, proxy credential entry in the dashboard, and dashboard-driven proxy connectivity tests.
 - Browser tab UI, bookmarks, profile notes/tags, bulk import/export and profile-data deletion confirmation flow.
 - End-to-end tests and verified CI results. This environment has pushed the source but has not executed the workflow.
 - Live proxy diagnostics (connectivity, exit IP, latency) and reliable authenticated-proxy end-to-end testing.

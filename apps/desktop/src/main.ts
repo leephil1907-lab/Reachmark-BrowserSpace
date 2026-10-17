@@ -79,6 +79,11 @@ async function launchProfile(id: string) {
 
 function registerIpc() {
   ipcMain.handle("profiles:list", () => profiles.map(safeProfile));
+  ipcMain.handle("profiles:status", (_event, input: { id?: unknown }) => {
+    if (typeof input?.id !== "string") throw new Error("Profile ID is required.");
+    const win = windows.get(input.id);
+    return { running: !!win && !win.isDestroyed() };
+  });
   ipcMain.handle("profiles:create", async (_event, input: { name?: unknown }) => {
     const profile: Profile = { id: randomUUID(), name: validateName(input?.name), createdAt: new Date().toISOString() };
     profiles.push(profile); await saveProfiles(); return safeProfile(profile);

@@ -19,9 +19,9 @@ type Profile = {
 };
 
 type Protocol = "http" | "https" | "socks5";
-type DesktopProxy = { id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string; hasCredentials: boolean };
+type DesktopProxy = { id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string; lastEgressCountry?: string; lastEgressCountryCode?: string; hasCredentials: boolean };
 type DesktopProfile = { id: string; name: string; createdAt: string; proxyId?: string; proxy?: { protocol: Protocol; host: string; port: number } };
-type ProxyTestResult = { id: string; ok: boolean; egressIp?: string; error?: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number };
+type ProxyTestResult = { id: string; ok: boolean; egressIp?: string; egressCountry?: string; egressCountryCode?: string; error?: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number };
 type DesktopApi = {
   listProfiles: () => Promise<DesktopProfile[]>;
   getProfileStatus: (id: string) => Promise<{ running: boolean }>;
@@ -50,6 +50,8 @@ type ProxyItem = {
   lastTestMessage?: string;
   lastTestLatencyMs?: number;
   lastEgressIp?: string;
+  lastEgressCountry?: string;
+  lastEgressCountryCode?: string;
 };
 
 const initialProfiles: Profile[] = [
@@ -102,7 +104,7 @@ export default function HomePage() {
       setProxies(savedProxies.map((item) => ({
         id: item.id, name: item.name, endpoint: `${item.host.includes(":") ? "[" + item.host + "]" : item.host}:${item.port}`,
         protocol: item.protocol.toUpperCase() as ProxyItem["protocol"],
-        region: item.lastTestStatus === "passed" ? `Egress ${item.lastEgressIp ?? "verified"}` : item.lastTestStatus === "failed" ? "Check failed" : "Not tested",
+        region: item.lastEgressCountry ? (item.lastEgressCountryCode ? `${item.lastEgressCountry} (${item.lastEgressCountryCode})` : item.lastEgressCountry) : item.lastTestStatus === "passed" ? `Egress ${item.lastEgressIp ?? "verified"}` : item.lastTestStatus === "failed" ? "Check failed" : "Not tested",
         assigned: mapped.filter((profile) => profile.proxy === item.id).length, hasCredentials: item.hasCredentials,
         lastTestAt: item.lastTestAt, lastTestStatus: item.lastTestStatus, lastTestMessage: item.lastTestMessage, lastTestLatencyMs: item.lastTestLatencyMs, lastEgressIp: item.lastEgressIp
       })));
@@ -177,11 +179,11 @@ export default function HomePage() {
     try {
       const result = await window.browserSpace.testProxy(proxyId);
       setProxies((current) => current.map((proxy) => proxy.id === proxyId ? {
-        ...proxy, region: result.ok ? `Egress ${result.egressIp ?? "verified"}` : "Check failed",
+        ...proxy, region: result.ok ? (result.egressCountry ? (result.egressCountryCode ? `${result.egressCountry} (${result.egressCountryCode})` : result.egressCountry) : `Egress ${result.egressIp ?? "verified"}`) : "Check failed",
         lastTestAt: result.lastTestAt, lastTestStatus: result.lastTestStatus,
-        lastTestMessage: result.lastTestMessage ?? result.error, lastTestLatencyMs: result.lastTestLatencyMs, lastEgressIp: result.egressIp
+        lastTestMessage: result.lastTestMessage ?? result.error, lastTestLatencyMs: result.lastTestLatencyMs, lastEgressIp: result.egressIp, lastEgressCountry: result.egressCountry, lastEgressCountryCode: result.egressCountryCode
       } : proxy));
-      setNotice(result.ok ? `Proxy test passed. Public egress IP: ${result.egressIp}. This confirms the test request reached the internet through the proxy.` : `Proxy test failed: ${result.error ?? "No connection."}`);
+      setNotice(result.ok ? `Proxy test passed. Public egress IP: ${result.egressIp}.${result.egressCountry ? ` Geolocation reports ${result.egressCountry}${result.egressCountryCode ? " (" + result.egressCountryCode + ")" : ""}.` : " Country could not be verified."} This confirms the test request reached the internet through the proxy.` : `Proxy test failed: ${result.error ?? "No connection."}`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Proxy connectivity test failed."); }
     finally { setTestingProxyIds((current) => current.filter((id) => id !== proxyId)); }
   }

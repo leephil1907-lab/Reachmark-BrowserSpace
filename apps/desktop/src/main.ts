@@ -8,7 +8,7 @@ type Protocol = "http" | "https" | "socks5";
 type ProxyRecord = {
   id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string;
   usernameCiphertext?: string; passwordCiphertext?: string;
-  lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string;
+  lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string; lastEgressCountry?: string; lastEgressCountryCode?: string;
 };
 type Profile = { id: string; name: string; createdAt: string; proxyId?: string; proxy?: { protocol: Protocol; host: string; port: number; usernameCiphertext?: string; passwordCiphertext?: string }; startUrl?: string };
 const dataFile = () => path.join(app.getPath("userData"), "profiles.json");
@@ -85,6 +85,7 @@ function safeProxy(proxy: ProxyRecord) {
     id: proxy.id, name: proxy.name, protocol: proxy.protocol, host: proxy.host, port: proxy.port,
     createdAt: proxy.createdAt, lastTestAt: proxy.lastTestAt, lastTestStatus: proxy.lastTestStatus,
     lastTestMessage: proxy.lastTestMessage, lastTestLatencyMs: proxy.lastTestLatencyMs, lastEgressIp: proxy.lastEgressIp,
+    lastEgressCountry: proxy.lastEgressCountry, lastEgressCountryCode: proxy.lastEgressCountryCode,
     hasCredentials: Boolean(proxy.usernameCiphertext)
   };
 }
@@ -163,13 +164,28 @@ async function testProxy(proxy: ProxyRecord) {
     const data = await response.json() as { ip?: unknown };
     const ip = typeof data.ip === "string" ? data.ip : undefined;
     if (!ip) throw new Error("The test service returned no public IP address.");
+    // Country lookup is best-effort: a geolocation outage must not turn a working proxy into a failed connection test.
+    let country: string | undefined;
+    let countryCode: string | undefined;
+    try {
+      const geoResponse = await probe.fetch("https://ipwho.is/" + encodeURIComponent(ip), { signal: controller.signal });
+      if (geoResponse.ok) {
+        const geo = await geoResponse.json() as { success?: boolean; country?: unknown; country_code?: unknown };
+        if (geo.success !== false) {
+          if (typeof geo.country === "string") country = geo.country;
+          if (typeof geo.country_code === "string") countryCode = geo.country_code.toUpperCase();
+        }
+      }
+    } catch { /* Geolocation is optional; the egress IP remains the primary connectivity result. */ }
     proxy.lastTestAt = new Date().toISOString();
     proxy.lastTestStatus = "passed";
-    proxy.lastTestMessage = "Connection successful";
+    proxy.lastTestMessage = country ? `Connection successful · ${country}${countryCode ? " (" + countryCode + ")" : ""}` : "Connection successful · country unverified";
     proxy.lastTestLatencyMs = Date.now() - startedAt;
     proxy.lastEgressIp = ip;
+    proxy.lastEgressCountry = country;
+    proxy.lastEgressCountryCode = countryCode;
     await saveProxies();
-    return { ...safeProxy(proxy), ok: true, egressIp: ip, elapsedMs: proxy.lastTestLatencyMs };
+    return { ...safeProxy(proxy), ok: true, egressIp: ip, egressCountry: country, egressCountryCode: countryCode, elapsedMs: proxy.lastTestLatencyMs };
   } catch (error) {
     const message = error instanceof Error && error.name === "AbortError"
       ? "Connection timed out after 12 seconds."
@@ -179,6 +195,8 @@ async function testProxy(proxy: ProxyRecord) {
     proxy.lastTestMessage = message;
     proxy.lastTestLatencyMs = Date.now() - startedAt;
     proxy.lastEgressIp = undefined;
+    proxy.lastEgressCountry = undefined;
+    proxy.lastEgressCountryCode = undefined;
     await saveProxies();
     return { ...safeProxy(proxy), ok: false, error: message };
   } finally {

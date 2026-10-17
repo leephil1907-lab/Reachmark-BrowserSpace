@@ -14,8 +14,8 @@ type Profile = { id: string; name: string; createdAt: string; proxyId?: string; 
 const dataFile = () => path.join(app.getPath("userData"), "profiles.json");
 const proxyFile = () => path.join(app.getPath("userData"), "proxies.json");
 const windows = new Map<string, BrowserWindow>();
-const authSessions = new WeakSet<Session>();
-const authResolvers = new WeakMap<Session, () => ProxyRecord | undefined>();
+let activeProbeProxy: ProxyRecord | undefined;
+let proxyTestChain: Promise<unknown> = Promise.resolve();
 let profiles: Profile[] = [];
 let proxies: ProxyRecord[] = [];
 
@@ -121,24 +121,7 @@ async function configureSession(ses: Session, proxy?: ProxyRecord) {
     ? { mode: "fixed_servers", proxyRules: proxyRules(proxy), proxyBypassRules: "<local>" }
     : { mode: "system" });
 }
-function attachProxyAuth(ses: Session, resolveProxy: () => ProxyRecord | undefined) {
-  authResolvers.set(ses, resolveProxy);
-  if (authSessions.has(ses)) return;
-  authSessions.add(ses);
-  ses.on("login", (event, _webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy) return;
-    const proxy = authResolvers.get(ses)?.();
-    if (!proxy || authInfo.host !== proxy.host || authInfo.port !== proxy.port || !proxy.usernameCiphertext) return;
-    try {
-      const credentials = decryptCredentials(proxy);
-      if (!credentials) return;
-      event.preventDefault();
-      callback(credentials.username, credentials.password);
-    } catch {
-      // Never log or expose credentials; leave the normal authentication failure flow intact.
-    }
-  });
-}
+
 async function launchProfile(id: string) {
   const profile = profiles.find((p) => p.id === id);
   if (!profile) throw new Error("Profile not found.");
@@ -147,7 +130,6 @@ async function launchProfile(id: string) {
   const ses = session.fromPartition(profilePartition(profile.id));
   const proxy = getProfileProxy(profile);
   await configureSession(ses, proxy);
-  if (proxy) attachProxyAuth(ses, () => getProfileProxy(profile));
   const win = new BrowserWindow({
     width: 1280, height: 850, minWidth: 760, minHeight: 560, title: "BrowserSpace — " + profile.name,
     webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false }
@@ -169,10 +151,10 @@ async function launchProfile(id: string) {
   return { alreadyOpen: false, profile: safeProfile(profile) };
 }
 async function testProxy(proxy: ProxyRecord) {
+  activeProbeProxy = proxy;
   const probe = session.fromPartition("browserspace-probe-" + randomUUID());
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
-  if (proxy.usernameCiphertext) attachProxyAuth(probe, () => proxy);
   try {
     await configureSession(probe, proxy);
     const response = await probe.fetch("https://api.ipify.org?format=json", { signal: controller.signal });
@@ -199,6 +181,7 @@ async function testProxy(proxy: ProxyRecord) {
   } finally {
     clearTimeout(timeout);
     try { await probe.closeAllConnections(); } catch { /* disposable probe session */ }
+    activeProbeProxy = undefined;
   }
 }
 async function verifyProfileIsolation() {
@@ -304,21 +287,28 @@ function registerIpc() {
     if (typeof input?.id !== "string") throw new Error("Proxy ID is required.");
     const proxy = proxies.find((p) => p.id === input.id);
     if (!proxy) throw new Error("Proxy not found.");
-    return testProxy(proxy);
+    const run = proxyTestChain.then(() => testProxy(proxy));
+    proxyTestChain = run.catch(() => undefined);
+    return run;
   });
   ipcMain.handle("profiles:verify-isolation", () => verifyProfileIsolation());
 }
 
 app.on("login", (event, webContents, _details, authInfo, callback) => {
   if (!authInfo.isProxy) return;
-  const profile = profiles.find((item) => {
-    const win = windows.get(item.id);
-    const proxy = getProfileProxy(item);
-    return !!win && !win.isDestroyed() && win.webContents.id === webContents?.id &&
-      !!proxy && proxy.host === authInfo.host && proxy.port === authInfo.port && !!proxy.usernameCiphertext;
-  });
-  const proxy = profile ? getProfileProxy(profile) : undefined;
-  if (!proxy?.usernameCiphertext) return;
+  let proxy: ProxyRecord | undefined;
+  if (webContents) {
+    const profile = profiles.find((item) => {
+      const win = windows.get(item.id);
+      const candidate = getProfileProxy(item);
+      return !!win && !win.isDestroyed() && win.webContents.id === webContents.id &&
+        !!candidate && candidate.host === authInfo.host && candidate.port === authInfo.port;
+    });
+    proxy = profile ? getProfileProxy(profile) : undefined;
+  } else {
+    proxy = activeProbeProxy;
+  }
+  if (!proxy?.usernameCiphertext || proxy.host !== authInfo.host || proxy.port !== authInfo.port) return;
   try {
     const credentials = decryptCredentials(proxy);
     if (!credentials) return;

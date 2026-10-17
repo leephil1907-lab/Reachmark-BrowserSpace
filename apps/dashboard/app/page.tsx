@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  Activity, ArrowDownUp, ArrowUpRight, Check, ChevronDown, CircleHelp,
+  Activity, AppWindow, ArrowDownUp, ArrowUpRight, Check, ChevronDown, CircleHelp,
   Clock3, Command, Globe2, Layers3, LockKeyhole, MoreHorizontal, Plus,
   Search, Settings2, ShieldCheck, Wifi, X
 } from "lucide-react";
@@ -209,10 +209,10 @@ export default function HomePage() {
   const activeProfiles = profiles.filter((profile) => profile.status === "Ready").length;
 
   return (
-    <main className="shell">
+    <main className="shell motion-shell">
       <aside className="sidebar">
         <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav("Overview"); }}>
-          <span className="brand-mark">B</span>
+          <span className="brand-mark" aria-hidden="true"><AppWindow size={21} strokeWidth={1.8} /></span>
           <span><strong>BrowserSpace</strong><small>by Reachmark</small></span>
         </a>
         <div className="workspace-label">WORKSPACE <ChevronDown size={14} /></div>
@@ -241,7 +241,7 @@ export default function HomePage() {
           <div className="top-actions"><span className="local-badge"><span className="pulse-dot" /> {desktopConnected ? "Desktop connected" : "Local preview"}</span><button className="icon-button" aria-label="Activity" onClick={() => setActiveNav("Activity")}><Clock3 size={17} /></button><div className="user-avatar small">R</div></div>
         </header>
 
-        <div className="content">
+        <div className="content page-enter">
           <div className="welcome-row">
             <div><div className="eyebrow"><span className="eyebrow-line" /> YOUR PRIVATE WORKSPACE</div><h1>{activeNav === "Overview" ? "Your browser, organized." : activeNav}</h1><p className="subtitle">{activeNav === "Overview" ? "Keep browsing sessions separate, persistent, and easy to manage." : activeNav === "Profiles" ? "Create and organize independent browsing sessions." : activeNav === "Proxies" ? "Manage proxy configurations and profile assignments." : "A transparent record of workspace actions."}</p></div>
             <div className="welcome-actions"><button className="button secondary" onClick={() => setShowProxyForm(true)}><Wifi size={16} /> Add proxy</button><button className="button primary" onClick={() => setShowProfileForm(true)}><Plus size={17} /> New profile</button></div>
@@ -249,13 +249,13 @@ export default function HomePage() {
 
           <div className="notice"><ShieldCheck size={17} /><span>{notice}</span><button aria-label="Dismiss notice" onClick={() => setNotice("")}><X size={15} /></button></div>
 
-          {activeNav === "Overview" && <div className="stats-grid">
+          {activeNav === "Overview" && <div className="stats-grid stagger-in">
             <div className="stat-card"><div className="stat-top"><span>Browser profiles</span><span className="stat-icon"><Globe2 size={17} /></span></div><div className="stat-value">{profiles.length.toString().padStart(2, "0")}</div><div className="stat-foot"><span className="stat-neutral">Local preview</span><span>profiles configured</span></div></div>
             <div className="stat-card"><div className="stat-top"><span>Active sessions</span><span className="stat-icon green"><Activity size={17} /></span></div><div className="stat-value">{activeProfiles.toString().padStart(2, "0")}</div><div className="stat-foot"><span className="stat-neutral">Preview state</span><span>not real processes</span></div></div>
             <div className="stat-card"><div className="stat-top"><span>Saved proxies</span><span className="stat-icon purple"><Wifi size={17} /></span></div><div className="stat-value">{proxies.length.toString().padStart(2, "0")}</div><div className="stat-foot"><span className="stat-neutral">Not tested</span><span>routing unverified</span></div></div>
           </div>}
 
-          {(activeNav === "Overview" || activeNav === "Profiles") && <section className="panel">
+          {(activeNav === "Overview" || activeNav === "Profiles") && <section className="panel panel-enter">
             <div className="panel-header"><div><h2>Browser profiles</h2><p>Separate sessions for different parts of your life and work.</p></div><div className="table-actions"><label className="search-box"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search profiles" /></label><button className="icon-button" aria-label="Sort profiles" onClick={() => setProfiles((current) => [...current].reverse())}><ArrowDownUp size={16} /></button><button className="button compact" onClick={() => setShowProfileForm(true)}><Plus size={15} /> Create</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>PROFILE</th><th>PROXY</th><th>LAST USED</th><th>STATUS</th><th /></tr></thead><tbody>
               {filteredProfiles.map((profile) => <tr key={profile.id}><td><div className="profile-cell"><span className={`profile-icon ${profile.color}`}><Globe2 size={17} /></span><span><b>{profile.name}</b><small>{profile.description}</small></span></div></td><td><select className="proxy-select" value={profile.proxy ?? ""} onChange={(event) => assignProxy(profile.id, event.target.value)} aria-label={`Proxy for ${profile.name}`}><option value="">Direct connection</option>{proxies.map((proxy) => <option key={proxy.id} value={proxy.id}>{proxy.name}</option>)}</select></td><td className="muted-cell">{profile.lastUsed}</td><td><span className={profile.status === "Ready" ? "status ready" : "status stopped"}><span />{profile.status}</span></td><td><button className="row-action" onClick={() => toggleProfile(profile.id)}>{profile.status === "Ready" ? "Stop" : "Launch"} <ArrowUpRight size={14} /></button></td></tr>)}
@@ -264,13 +264,13 @@ export default function HomePage() {
             <div className="panel-footer"><span>Showing {filteredProfiles.length} of {profiles.length} profiles</span><span className="footer-note"><LockKeyhole size={13} /> {desktopConnected ? "Isolated desktop sessions" : "Profile isolation requires desktop runtime"}</span></div>
           </section>}
 
-          {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel">
+          {(activeNav === "Overview" || activeNav === "Proxies") && <section className="panel proxy-panel panel-enter">
             <div className="panel-header"><div><h2>Proxy manager</h2><p>Keep proxy settings organized and assign them per profile.</p></div><button className="button secondary compact" onClick={() => setShowProxyForm(true)}><Plus size={15} /> Add proxy</button></div>
             {proxies.length === 0 ? <div className="empty-proxies"><Wifi size={22} /><b>No proxies configured</b><span>Add a proxy endpoint to prepare a profile assignment.</span></div> : <div className="proxy-list">{proxies.map((proxy) => <div className="proxy-row" key={proxy.id}><div className="proxy-symbol"><Wifi size={17} /></div><div className="proxy-details"><b>{proxy.name}</b><span>{proxy.protocol} · {proxy.endpoint}</span></div><span className="proxy-region"><span className="status-ring" />{proxy.region}</span><span className="assigned-count">{profiles.filter((profile) => profile.proxy === proxy.id).length} profiles</span><button className="row-action" onClick={() => { void removeProxy(proxy.id); }}>Remove <X size={13} /></button></div>)}</div>}
             <div className="proxy-hint"><ShieldCheck size={15} /><span>Credentials and live proxy diagnostics are not yet exposed in the dashboard. Saved profile assignments are applied by the desktop runtime.</span></div>
           </section>}
 
-          {activeNav === "Activity" && <section className="panel activity-panel"><div className="panel-header"><div><h2>Workspace activity</h2><p>Actions in this session.</p></div><Clock3 size={18} /></div><div className="activity-item"><span className="activity-icon"><Check size={15} /></span><span><b>Workspace opened</b><small>Preview UI loaded successfully. No browser processes or network checks were run.</small></span><time>Now</time></div><div className="activity-item"><span className="activity-icon"><LockKeyhole size={15} /></span><span><b>Privacy boundary active</b><small>This dashboard does not collect proxy passwords or profile cookies.</small></span><time>Now</time></div></section>}
+          {activeNav === "Activity" && <section className="panel activity-panel panel-enter"><div className="panel-header"><div><h2>Workspace activity</h2><p>Actions in this session.</p></div><Clock3 size={18} /></div><div className="activity-item"><span className="activity-icon"><Check size={15} /></span><span><b>Workspace opened</b><small>Preview UI loaded successfully. No browser processes or network checks were run.</small></span><time>Now</time></div><div className="activity-item"><span className="activity-icon"><LockKeyhole size={15} /></span><span><b>Privacy boundary active</b><small>This dashboard does not collect proxy passwords or profile cookies.</small></span><time>Now</time></div></section>}
 
           <footer className="bottom-note"><span><Command size={13} /> Built for focused browsing</span><span><span className="footer-dot" /> {desktopConnected ? "Desktop engine connected" : "Desktop engine not connected"}</span><a href="https://github.com/leephil1907-lab/Reachmark-BrowserSpace" target="_blank" rel="noreferrer">View repository <ArrowUpRight size={13} /></a></footer>
         </div>

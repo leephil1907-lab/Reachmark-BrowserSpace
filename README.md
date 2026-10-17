@@ -55,7 +55,7 @@ npm install
 npm run dev
 ```
 
-The dashboard opens on the Next.js development server. Without the Electron bridge, profile and proxy actions are preview-only. In the desktop shell, profile metadata and per-profile proxy assignments are handled by the local Electron runtime.
+The dashboard opens on the Next.js development server. Without the Electron bridge, profile and proxy actions are preview-only. In the desktop shell, profile metadata and a shared proxy catalogue are stored locally. Proxy credentials use Electron's OS-backed safeStorage encryption; credentials are never returned by catalogue/list APIs.
 
 To compile and open the desktop runtime in a separate terminal:
 
@@ -64,22 +64,22 @@ npm run build:desktop
 npm start --workspace @browserspace/desktop
 ```
 
-The desktop runtime stores profile metadata locally and launches a real Chromium window with a persistent session per profile. The temporary desktop status window and the web dashboard are not yet connected.
+The desktop runtime stores profile metadata and the shared proxy catalogue locally and launches a real Chromium window with a persistent session per profile. The dashboard connects through a restricted preload IPC bridge.
 
 ## Implementation status
 
 **Present in the repository**
 - Responsive dashboard with profile search, create actions, launch/stop states, proxy assignment controls, a Reachmark browser-app icon, and reduced-motion-aware motion transitions.
-- Electron desktop foundation with persistent per-profile sessions, profile metadata persistence, direct/system proxy selection, and unauthenticated HTTP/HTTPS/SOCKS5 routing.
-- IPC handlers for profile create/list/rename/launch/stop/delete and per-profile proxy settings.
-- OS-backed encrypted storage for proxy credentials submitted through the IPC API; credential ciphertext is removed from renderer-facing profile objects.
-- CI workflow for dashboard and desktop typecheck/build/lint.
+- Electron desktop runtime with persistent per-profile sessions, local profile metadata, a persistent shared proxy catalogue, and HTTP/HTTPS/SOCKS5 routing.
+- IPC handlers for profile lifecycle, shared proxy create/list/delete, profile-to-proxy assignment, live proxy connectivity tests, and profile isolation diagnostics.
+- OS-backed encrypted storage for proxy credentials; ciphertext and plaintext credentials are excluded from renderer-facing catalogue objects.
+- CI workflow for dashboard and desktop typecheck/build/lint plus stable profile-partition unit tests.
 
 **Not yet complete**
-- Persisted shared proxy catalogue, proxy credential entry in the dashboard, and dashboard-driven proxy connectivity tests.
+- Editing an existing proxy record, bulk import/export, and richer provider-specific proxy configuration.
 - Browser tab UI, bookmarks, profile notes/tags, bulk import/export and profile-data deletion confirmation flow.
-- End-to-end tests and verified CI results. This environment has pushed the source but has not executed the workflow.
-- Live proxy diagnostics (connectivity, exit IP, latency) and reliable authenticated-proxy end-to-end testing.
+- A full automated Electron GUI test on a real desktop environment. The isolation diagnostic checks separate persistent partitions; the first run seeds a harmless marker on the reserved `.invalid` domain, and rerunning after restarting BrowserSpace verifies that each profile retained its own marker.
+- Real proxy connectivity test and public egress-IP lookup are implemented; authenticated proxy behavior still needs end-to-end verification with a real authenticated endpoint. Latency is not currently reported.
 - Packaging/signing and a Windows installer.
 
 Do not use the dashboard preview state as proof that a real browser session or proxy connection is active.

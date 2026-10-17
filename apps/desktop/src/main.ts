@@ -14,6 +14,8 @@ type Profile = { id: string; name: string; createdAt: string; proxyId?: string; 
 const dataFile = () => path.join(app.getPath("userData"), "profiles.json");
 const proxyFile = () => path.join(app.getPath("userData"), "proxies.json");
 const windows = new Map<string, BrowserWindow>();
+const authSessions = new WeakSet<Session>();
+const authResolvers = new WeakMap<Session, () => ProxyRecord | undefined>();
 let profiles: Profile[] = [];
 let proxies: ProxyRecord[] = [];
 
@@ -119,9 +121,14 @@ async function configureSession(ses: Session, proxy?: ProxyRecord) {
     ? { mode: "fixed_servers", proxyRules: proxyRules(proxy), proxyBypassRules: "<local>" }
     : { mode: "system" });
 }
-function attachProxyAuth(ses: Session, proxy: ProxyRecord) {
+function attachProxyAuth(ses: Session, resolveProxy: () => ProxyRecord | undefined) {
+  authResolvers.set(ses, resolveProxy);
+  if (authSessions.has(ses)) return;
+  authSessions.add(ses);
   ses.on("login", (event, _webContents, _details, authInfo, callback) => {
-    if (!authInfo.isProxy || authInfo.host !== proxy.host || authInfo.port !== proxy.port || !proxy.usernameCiphertext) return;
+    if (!authInfo.isProxy) return;
+    const proxy = authResolvers.get(ses)?.();
+    if (!proxy || authInfo.host !== proxy.host || authInfo.port !== proxy.port || !proxy.usernameCiphertext) return;
     try {
       const credentials = decryptCredentials(proxy);
       if (!credentials) return;
@@ -140,7 +147,7 @@ async function launchProfile(id: string) {
   const ses = session.fromPartition(profilePartition(profile.id));
   const proxy = getProfileProxy(profile);
   await configureSession(ses, proxy);
-  if (proxy) attachProxyAuth(ses, proxy);
+  if (proxy) attachProxyAuth(ses, () => getProfileProxy(profile));
   const win = new BrowserWindow({
     width: 1280, height: 850, minWidth: 760, minHeight: 560, title: "BrowserSpace — " + profile.name,
     webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false }
@@ -165,7 +172,7 @@ async function testProxy(proxy: ProxyRecord) {
   const probe = session.fromPartition("browserspace-probe-" + randomUUID());
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
-  if (proxy.usernameCiphertext) attachProxyAuth(probe, proxy);
+  if (proxy.usernameCiphertext) attachProxyAuth(probe, () => proxy);
   try {
     await configureSession(probe, proxy);
     const response = await probe.fetch("https://api.ipify.org?format=json", { signal: controller.signal });
@@ -273,6 +280,7 @@ function registerIpc() {
   ipcMain.handle("proxies:list", () => proxies.map(safeProxy));
   ipcMain.handle("proxies:create", async (_event, input: { name?: unknown; protocol?: unknown; host?: unknown; port?: unknown; username?: unknown; password?: unknown }) => {
     const endpoint = validateEndpoint(input);
+    if (Boolean(input?.username) !== Boolean(input?.password)) throw new Error("Enter both proxy username and password, or leave both blank.");
     const proxy: ProxyRecord = {
       id: randomUUID(), name: validateName(input?.name, "Proxy name"), ...endpoint, createdAt: new Date().toISOString(),
       usernameCiphertext: encryptCredential(input?.username, "Proxy username", 512),

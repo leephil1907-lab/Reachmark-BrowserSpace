@@ -31,7 +31,7 @@ A privacy-first desktop browser workspace for managing separate, persistent brow
 
 ## Development status
 
-This repository is being initialized. Features must be described as implemented only after their code and tests are present. A green UI or saved proxy record does not prove that the desktop browser is routing traffic through that proxy.
+The dashboard now uses the Reachmark lime/charcoal visual system, a browser-window app mark, and restrained CSS motion for page entry, navigation, cards, status indicators and dialogs. Motion respects `prefers-reduced-motion`. The dashboard remains a prototype: UI animation is not evidence that a browser session or proxy connection is active.
 
 ## Security notes
 
@@ -55,7 +55,7 @@ npm install
 npm run dev
 ```
 
-The dashboard opens on the Next.js development server. Its profile/proxy lists are currently preview state, so changes do not persist across refreshes and are not sent to Electron.
+The dashboard opens on the Next.js development server. Without the Electron bridge, profile and proxy actions are preview-only. In the desktop shell, profile metadata and per-profile proxy assignments are handled by the local Electron runtime.
 
 To compile and open the desktop runtime in a separate terminal:
 
@@ -69,7 +69,7 @@ The desktop runtime stores profile metadata locally and launches a real Chromium
 ## Implementation status
 
 **Present in the repository**
-- Responsive dashboard with profile search, create actions, preview launch/stop states, proxy assignment controls and proxy list UI.
+- Responsive dashboard with profile search, create actions, launch/stop states, proxy assignment controls, a Reachmark browser-app icon, and reduced-motion-aware motion transitions.
 - Electron desktop foundation with persistent per-profile sessions, profile metadata persistence, direct/system proxy selection, and unauthenticated HTTP/HTTPS/SOCKS5 routing.
 - IPC handlers for profile create/list/rename/launch/stop/delete and per-profile proxy settings.
 - OS-backed encrypted storage for proxy credentials submitted through the IPC API; credential ciphertext is removed from renderer-facing profile objects.

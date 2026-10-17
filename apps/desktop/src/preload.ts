@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-type ProxyConfig = { protocol: "http" | "https" | "socks5"; host: string; port: number };
+type ProxyConfig = { protocol: "http" | "https" | "socks5"; host: string; port: number; username?: string; password?: string };
 
 contextBridge.exposeInMainWorld("browserSpace", {
   listProfiles: () => ipcRenderer.invoke("profiles:list"),

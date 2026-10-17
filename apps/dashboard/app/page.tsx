@@ -18,7 +18,7 @@ type Profile = {
 };
 
 type Protocol = "http" | "https" | "socks5";
-type DesktopProxy = { id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastEgressIp?: string; hasCredentials: boolean };
+type DesktopProxy = { id: string; name: string; protocol: Protocol; host: string; port: number; createdAt: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number; lastEgressIp?: string; hasCredentials: boolean };
 type DesktopProfile = { id: string; name: string; createdAt: string; proxyId?: string; proxy?: { protocol: Protocol; host: string; port: number } };
 type ProxyTestResult = { id: string; ok: boolean; egressIp?: string; error?: string; lastTestAt?: string; lastTestStatus?: "passed" | "failed"; lastTestMessage?: string; lastTestLatencyMs?: number };
 type DesktopApi = {
